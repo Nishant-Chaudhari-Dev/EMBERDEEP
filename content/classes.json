@@ -1,0 +1,59 @@
+{
+  "fighter": {
+    "name": "Fighter", "blurb": "Armored, tough, hits hard. Second Wind heals, Action Surge grants an extra action.", "hit_die": 10,
+    "priority": ["STR", "CON", "DEX", "WIS", "CHA", "INT"],
+    "saves": ["STR", "CON"],
+    "skills": ["athletics", "perception", "intimidation"],
+    "armor": "chain_mail", "shield": true,
+    "weapons": ["longsword", "handaxe", "light_crossbow"],
+    "items": {"torch": 3, "rations": 5, "rope (50 ft)": 1, "potion of healing": 1},
+    "gold": 10,
+    "features": {"second_wind": 1},
+    "level_features": {"2": {"action_surge": 1}},
+    "caster": null
+  },
+  "rogue": {
+    "name": "Rogue", "blurb": "Quick and precise. Sneak Attack adds big damage when an ally is near the target or you have advantage.", "hit_die": 8,
+    "priority": ["DEX", "CON", "INT", "WIS", "CHA", "STR"],
+    "saves": ["DEX", "INT"],
+    "skills": ["stealth", "sleight_of_hand", "perception", "acrobatics", "deception"],
+    "armor": "leather", "shield": false,
+    "weapons": ["shortsword", "shortbow", "dagger"],
+    "items": {"thieves' tools": 1, "caltrops": 1, "rations": 5, "potion of healing": 1},
+    "gold": 15,
+    "features": {"sneak_attack": 1},
+    "level_features": {},
+    "caster": null
+  },
+  "wizard": {
+    "name": "Wizard", "blurb": "Fragile scholar with the widest spells: blasts, control, and utility.", "hit_die": 6,
+    "priority": ["INT", "CON", "DEX", "WIS", "CHA", "STR"],
+    "saves": ["INT", "WIS"],
+    "skills": ["arcana", "history", "investigation"],
+    "armor": null, "shield": false,
+    "weapons": ["quarterstaff", "dagger"],
+    "items": {"spellbook": 1, "component pouch": 1, "rations": 5, "ink and quill": 1},
+    "gold": 10,
+    "features": {},
+    "level_features": {},
+    "caster": "INT",
+    "spells": ["fire_bolt", "ray_of_frost", "light", "mage_hand", "prestidigitation",
+               "magic_missile", "burning_hands", "thunderwave", "detect_magic",
+               "shatter", "hold_person"]
+  },
+  "cleric": {
+    "name": "Cleric", "blurb": "Divine caster in heavy armor. Heals allies and still swings a mace.", "hit_die": 8,
+    "priority": ["WIS", "CON", "STR", "DEX", "CHA", "INT"],
+    "saves": ["WIS", "CHA"],
+    "skills": ["medicine", "religion", "insight"],
+    "armor": "scale_mail", "shield": true,
+    "weapons": ["mace", "light_crossbow"],
+    "items": {"holy symbol": 1, "healer's kit": 1, "rations": 5, "candles": 5},
+    "gold": 10,
+    "features": {},
+    "level_features": {},
+    "caster": "WIS",
+    "spells": ["sacred_flame", "light", "thaumaturgy", "guiding_bolt", "cure_wounds",
+               "healing_word", "inflict_wounds", "detect_magic", "hold_person"]
+  }
+}

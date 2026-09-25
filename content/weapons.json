@@ -1,0 +1,18 @@
+{
+  "unarmed":        {"name": "Unarmed strike",  "damage": "1",    "type": "bludgeoning", "props": []},
+  "improvised":     {"name": "Improvised weapon","damage": "1d4", "type": "bludgeoning", "props": []},
+  "dagger":         {"name": "Dagger",          "damage": "1d4",  "type": "piercing",    "props": ["finesse", "light", "thrown"]},
+  "shortsword":     {"name": "Shortsword",      "damage": "1d6",  "type": "piercing",    "props": ["finesse", "light"]},
+  "rapier":         {"name": "Rapier",          "damage": "1d8",  "type": "piercing",    "props": ["finesse"]},
+  "longsword":      {"name": "Longsword",       "damage": "1d8",  "type": "slashing",    "props": ["versatile"]},
+  "greatsword":     {"name": "Greatsword",      "damage": "2d6",  "type": "slashing",    "props": ["heavy", "two-handed"]},
+  "greataxe":       {"name": "Greataxe",        "damage": "1d12", "type": "slashing",    "props": ["heavy", "two-handed"]},
+  "handaxe":        {"name": "Handaxe",         "damage": "1d6",  "type": "slashing",    "props": ["light", "thrown"]},
+  "mace":           {"name": "Mace",            "damage": "1d6",  "type": "bludgeoning", "props": []},
+  "warhammer":      {"name": "Warhammer",       "damage": "1d8",  "type": "bludgeoning", "props": ["versatile"]},
+  "quarterstaff":   {"name": "Quarterstaff",    "damage": "1d6",  "type": "bludgeoning", "props": ["versatile"]},
+  "spear":          {"name": "Spear",           "damage": "1d6",  "type": "piercing",    "props": ["thrown", "versatile"]},
+  "shortbow":       {"name": "Shortbow",        "damage": "1d6",  "type": "piercing",    "props": ["ranged"]},
+  "longbow":        {"name": "Longbow",         "damage": "1d8",  "type": "piercing",    "props": ["ranged", "heavy"]},
+  "light_crossbow": {"name": "Light crossbow",  "damage": "1d8",  "type": "piercing",    "props": ["ranged"]}
+}

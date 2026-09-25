@@ -1,0 +1,11 @@
+# Emberdeep itself is pure Python standard library (Python 3.10+).
+# You need ONE way to run the model:
+#
+#   Option A (default): llama.cpp inside the game process, no server of any kind.
+#       Plain CPU build:      pip install llama-cpp-python
+#       GPU builds and prebuilt wheels: see README.md, "Install a backend".
+#
+#   Option B: Ollama running on this computer (https://ollama.com). Nothing from pip needed.
+#
+#   Option C: --backend mock, no model at all (for testing the interface only).
+llama-cpp-python>=0.2.90

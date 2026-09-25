@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Emberdeep</title>
+<style>
+:root {
+  --bg: #16201c;
+  --panel: #1d2a25;
+  --panel-2: #243430;
+  --line: #34463f;
+  --text: #e6dfcc;
+  --muted: #a3ada5;
+  --faint: #748279;
+  --brass: #c9a14a;
+  --brass-soft: rgba(201, 161, 74, 0.14);
+  --rust: #b5523b;
+  --rust-text: #e08a72;
+  --teal: #6fb3a8;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --ui: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+  --radius: 10px;
+  --header: 56px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+html {
+  background:
+    radial-gradient(1100px 520px at 8% 112%, rgba(181, 82, 59, 0.10), transparent 62%) fixed,
+    var(--bg);
+}
+body {
+  color: var(--text);
+  font: 15px/1.5 var(--ui);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+body.in-game { overflow: hidden; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button {
+  cursor: pointer; border: 1px solid var(--line); background: var(--panel-2);
+  border-radius: 8px; padding: 7px 12px;
+}
+button:hover { border-color: var(--faint); }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, .pick:focus-within {
+  outline: 2px solid var(--brass); outline-offset: 2px;
+}
+button.primary { background: var(--brass); border-color: var(--brass); color: #1b1608; font-weight: 600; }
+button.primary:hover { filter: brightness(1.07); }
+button.ghost { background: transparent; }
+button:disabled { opacity: 0.5; cursor: default; }
+input[type=text], textarea, select {
+  width: 100%; background: #121a17; border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px;
+}
+textarea { resize: vertical; }
+label.f { display: block; margin: 14px 0 6px; color: var(--muted); font-size: 13.5px; }
+[hidden] { display: none !important; }
+
+/* header */
+.top {
+  height: var(--header); display: flex; align-items: center; gap: 18px; padding: 0 20px;
+  border-bottom: 1px solid var(--line); background: rgba(18, 26, 23, 0.7);
+}
+.brand { font: italic 600 21px/1 var(--serif); color: var(--brass); letter-spacing: 0.01em; }
+.where { flex: 1; min-width: 0; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.where b { color: var(--text); font-weight: 600; }
+.conn { display: flex; align-items: center; gap: 7px; color: var(--faint); font-size: 13px; }
+.conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.conn.online i { background: var(--teal); }
+.conn.reconnecting i { background: var(--rust); }
+#ledgerToggle { display: none; }
+
+/* shared screens */
+.page { max-width: 920px; margin: 0 auto; padding: 36px 20px 60px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; }
+h1 { font: 600 34px/1.15 var(--serif); margin: 0 0 8px; }
+h2 { font: 600 19px/1.25 var(--serif); margin: 0 0 10px; }
+h3 { font-size: 13.5px; font-weight: 600; color: var(--muted); margin: 0 0 8px; }
+.lede { color: var(--muted); max-width: 60ch; margin: 0 0 22px; }
+.note { color: var(--faint); font-size: 13.5px; }
+.err-line { color: var(--rust-text); min-height: 1.4em; margin-top: 10px; font-size: 14px; }
+
+#join .card { max-width: 440px; }
+#join .row { display: flex; gap: 10px; margin-top: 6px; }
+#join .row button { flex: none; }
+
+/* lobby */
+.lobby-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; align-items: start; }
+.picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.pick { position: relative; display: block; border: 1px solid var(--line); border-radius: 9px; padding: 11px 12px; background: #19251f; cursor: pointer; }
+.pick input { position: absolute; opacity: 0; pointer-events: none; }
+.pick .t { font-weight: 600; }
+.pick .s { color: var(--muted); font-size: 13px; margin-top: 3px; }
+.pick.on { border-color: var(--brass); background: var(--brass-soft); }
+.pick.on .t { color: var(--brass); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.table-list { list-style: none; margin: 0; padding: 0; }
+.table-list li > span:nth-child(2) { white-space: nowrap; }
+.table-list li { display: flex; gap: 8px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid rgba(52, 70, 63, 0.6); }
+.table-list li:last-child { border-bottom: 0; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; transform: translateY(-1px); }
+.dot.on { background: var(--teal); }
+.table-list .c { color: var(--muted); font-size: 13px; margin-left: auto; text-align: right; }
+.sheet { white-space: pre-wrap; font-size: 13.5px; color: var(--muted); background: #121a17; border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0 0; }
+.stack > * + * { margin-top: 16px; }
+.claim-list button { display: block; width: 100%; text-align: left; margin-top: 8px; }
+
+/* game */
+#game { display: grid; grid-template-columns: minmax(0, 1fr) 340px; height: calc(100vh - var(--header)); height: calc(100dvh - var(--header)); }
+.story-col { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+.story { flex: 1; overflow-y: auto; padding: 28px 28px 12px; scroll-behavior: smooth; }
+.story > * { max-width: 720px; margin-left: auto; margin-right: auto; }
+.e { margin-bottom: 12px; }
+.narr { font: 18px/1.68 var(--serif); color: var(--text); margin: 22px auto; }
+.narr p { margin: 0 0 0.8em; }
+.narr p:last-child { margin-bottom: 0; }
+.said { display: flex; gap: 10px; align-items: baseline; padding-left: 12px; border-left: 2px solid var(--brass-dim, #7d6630); }
+.said .who { color: var(--brass); font-weight: 600; font-size: 14px; flex: none; }
+.said .what { color: var(--muted); font-style: italic; }
+.sys { color: var(--faint); font-size: 13.5px; }
+.err { color: var(--rust-text); font-size: 14px; border-left: 2px solid var(--rust); padding-left: 12px; }
+.over { font: 600 20px/1.4 var(--serif); color: var(--rust-text); text-align: center; margin: 28px auto; }
+.priv { background: #141d19; border: 1px dashed var(--line); border-radius: 8px; padding: 10px 12px; font-size: 13.5px; }
+.priv .tag { color: var(--faint); font-size: 12px; margin-bottom: 4px; }
+.priv .body { white-space: pre-wrap; color: var(--muted); }
+.turnmark { display: flex; align-items: center; gap: 12px; color: var(--faint); font-size: 12.5px; margin: 18px auto 12px; }
+.turnmark::before, .turnmark::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.turnmark.mine { color: var(--brass); }
+
+/* the one loud thing: d20 roll chips */
+.roll { display: flex; gap: 11px; align-items: flex-start; font-size: 14px; color: var(--muted); }
+.die { flex: none; width: 32px; height: 36px; }
+.die > span {
+  display: block; width: 100%; height: 100%; padding: 1.5px; background: var(--line);
+  clip-path: polygon(50% 0, 96% 25%, 96% 75%, 50% 100%, 4% 75%, 4% 25%);
+}
+.die > span > b {
+  display: grid; place-items: center; width: 100%; height: 100%; background: var(--panel);
+  clip-path: polygon(50% 0, 96% 25%, 96% 75%, 50% 100%, 4% 75%, 4% 25%);
+  color: var(--teal); font: 700 13.5px/1 var(--ui);
+}
+.die.none > span { background: transparent; }
+.die.none > span > b { background: transparent; color: var(--faint); }
+.die.n20 { filter: drop-shadow(0 0 7px rgba(201, 161, 74, 0.55)); }
+.die.n20 > span { background: var(--brass); }
+.die.n20 > span > b { color: var(--brass); background: #2a2616; }
+.die.n1 > span { background: var(--rust); }
+.die.n1 > span > b { color: var(--rust-text); background: #2b1a15; }
+.roll .rtext { padding-top: 8px; }
+.roll .d { color: var(--teal); font-weight: 600; }
+.roll .d.n20 { color: var(--brass); }
+.roll .d.n1 { color: var(--rust-text); }
+.roll.good .rtext { color: #c4cfc6; }
+.roll.bad .rtext { color: #c9a79d; }
+
+.thinking { max-width: 720px; margin: 4px auto 14px; color: var(--faint); font-style: italic; font-family: var(--serif); display: flex; gap: 10px; align-items: center; }
+.embers { display: inline-flex; gap: 4px; }
+.embers i { width: 5px; height: 5px; border-radius: 50%; background: var(--rust); animation: ember 1.2s ease-in-out infinite; }
+.embers i:nth-child(2) { animation-delay: 0.15s; }
+.embers i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes ember { 0%, 100% { opacity: 0.25; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-3px); background: var(--brass); } }
+@media (prefers-reduced-motion: reduce) { .embers i { animation: none; opacity: 0.7; } .story { scroll-behavior: auto; } }
+
+.composer { border-top: 1px solid var(--line); padding: 12px 28px 14px; background: rgba(18, 26, 23, 0.6); }
+.composer > * { max-width: 720px; margin-left: auto; margin-right: auto; }
+.status { display: flex; gap: 12px; align-items: center; min-height: 30px; color: var(--muted); font-size: 14px; }
+.status span { flex: 1; }
+.status.mine span { color: var(--brass); font-weight: 600; }
+.inputrow { display: flex; gap: 10px; align-items: flex-end; margin-top: 6px; }
+.inputrow textarea { resize: none; min-height: 46px; max-height: 180px; font: 16px/1.45 var(--serif); padding: 11px 13px; }
+.inputrow button { height: 46px; padding: 0 20px; }
+.quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.quick button { padding: 4px 10px; font-size: 13px; color: var(--muted); background: transparent; }
+
+/* ledger */
+#ledger { overflow-y: auto; padding: 20px 18px 30px; background: rgba(18, 26, 23, 0.35); }
+#ledger .card { padding: 14px 15px; margin-bottom: 14px; }
+.loc-desc { color: var(--muted); font-size: 14px; margin: 0; }
+.meta { color: var(--faint); font-size: 12.5px; margin-top: 8px; }
+.pc { padding: 10px 11px; border-radius: 8px; border: 1px solid transparent; margin: 0 -11px; }
+.pc + .pc { margin-top: 4px; }
+.pc.active { border-color: var(--brass); background: var(--brass-soft); }
+.pc.down .nm { color: var(--rust-text); }
+.pc .r1 { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.pc .nm { font-weight: 600; }
+.pc .you { color: var(--brass); font-size: 12px; font-weight: 600; margin-left: 6px; }
+.pc .lbl { color: var(--faint); font-size: 12.5px; text-align: right; }
+.pc .r2 { color: var(--faint); font-size: 12.5px; }
+.hp { display: flex; gap: 9px; align-items: center; margin-top: 6px; }
+.bar { flex: 1; height: 6px; border-radius: 3px; background: #121a17; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--teal); transition: width 0.4s ease; }
+.bar i.mid { background: var(--brass); }
+.bar i.low { background: var(--rust); }
+.hp .num { font-size: 13px; color: var(--muted); min-width: 52px; text-align: right; }
+.tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.tagc { font-size: 12px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.tagc.warn { border-color: var(--rust); color: var(--rust-text); }
+details.gear { margin-top: 8px; font-size: 13px; color: var(--muted); }
+details.gear summary { cursor: pointer; color: var(--faint); }
+details.gear div { margin-top: 5px; }
+details.gear b { color: var(--text); font-weight: 600; }
+.foe { display: flex; justify-content: space-between; gap: 8px; padding: 6px 9px; margin: 0 -9px; border-radius: 7px; border: 1px solid transparent; }
+.foe.active { border-color: var(--rust); background: rgba(181, 82, 59, 0.10); }
+.foe .st { font-size: 13px; color: var(--muted); }
+.foe .st.bloodied, .foe .st.near { color: var(--rust-text); }
+.quest { font-size: 14px; padding: 4px 0; }
+.quest .qs { color: var(--faint); font-size: 12.5px; margin-left: 6px; }
+.quest.done { color: var(--faint); text-decoration: line-through; }
+
+@media (max-width: 900px) {
+  #game { grid-template-columns: 1fr; }
+  .story-col { border-right: 0; }
+  #ledgerToggle { display: inline-block; padding: 5px 11px; font-size: 13px; }
+  #ledger {
+    position: fixed; top: var(--header); right: 0; bottom: 0; width: min(360px, 92vw); z-index: 5;
+    background: var(--bg); border-left: 1px solid var(--line); transform: translateX(102%); transition: transform 0.2s ease;
+  }
+  #ledger.open { transform: none; box-shadow: -20px 0 40px rgba(0, 0, 0, 0.4); }
+  .story { padding: 20px 16px 10px; }
+  .composer { padding: 10px 14px 12px; }
+  .lobby-grid { grid-template-columns: 1fr; }
+  .conn span { display: none; }
+  .quick { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .quick button { flex: none; }
+  .where { font-size: 13.5px; }
+}
+@media (max-width: 520px) { .two { grid-template-columns: 1fr; } .narr { font-size: 17px; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">Emberdeep</div>
+  <div class="where" id="where"></div>
+  <button id="ledgerToggle" class="ghost" hidden>Party</button>
+  <div class="conn" id="conn" hidden><i></i><span>Connecting</span></div>
+</header>
+
+<!-- join -->
+<section id="join" class="page" hidden>
+  <h1>Pull up a chair.</h1>
+  <p class="lede">A tabletop adventure with an AI game master that runs entirely on the host's computer. Say anything, try anything. The dice and the rules keep it honest.</p>
+  <div class="card">
+    <label class="f" for="joinName">Your name</label>
+    <div class="row">
+      <input type="text" id="joinName" maxlength="24" autocomplete="nickname" placeholder="e.g. Rick">
+      <button class="primary" id="joinBtn">Join the table</button>
+    </div>
+    <div class="err-line" id="joinErr"></div>
+  </div>
+</section>
+
+<!-- lobby -->
+<section id="lobby" class="page" hidden>
+  <div class="lobby-grid">
+    <div class="stack">
+      <div id="lobbyHead"></div>
+
+      <div id="claimBox" class="card" hidden>
+        <h2>Pick up a character</h2>
+        <p class="note">These heroes have no player right now. Take one over, or make your own below.</p>
+        <div class="claim-list" id="claimList"></div>
+      </div>
+
+      <form id="createForm" class="card" autocomplete="off">
+        <h2>Make a character</h2>
+        <label class="f" for="cName">Character name</label>
+        <input type="text" id="cName" maxlength="30" required placeholder="Brakka, Lise, Tam...">
+        <label class="f">Ancestry</label>
+        <div class="picks" id="ancPicks"></div>
+        <label class="f">Class</label>
+        <div class="picks" id="clsPicks"></div>
+        <label class="f">Ability scores</label>
+        <div class="two">
+          <label class="pick"><input type="radio" name="method" value="array" checked><div class="t">Standard array</div><div class="s">15, 14, 13, 12, 10, 8, placed for your class. Balanced.</div></label>
+          <label class="pick"><input type="radio" name="method" value="roll"><div class="t">Roll 4d6, drop lowest</div><div class="s">Could be heroic, could be rough. Swingy.</div></label>
+        </div>
+        <label class="f" for="cBack">A line or two of backstory <span class="note">(optional, the GM will use it)</span></label>
+        <textarea id="cBack" rows="2" maxlength="500" placeholder="Deserted the baron's guard after refusing an order. Owes money in three towns."></textarea>
+        <div style="margin-top:16px"><button class="primary" type="submit" id="createBtn">Create character</button></div>
+        <div class="err-line" id="createErr"></div>
+      </form>
+
+      <div id="beginBox" class="card" hidden>
+        <h2>Ready when you are</h2>
+        <div id="mySheet" class="sheet" hidden></div>
+        <label class="f" for="premise">What kind of adventure? <span class="note">(optional)</span></label>
+        <textarea id="premise" rows="4" maxlength="1200" placeholder="Leave blank for the default: the village of Thornwick, a forest of charred pines that never finished burning, and something waking beneath the old quarry. Or describe your own: a heist in a floating city, a haunted lighthouse, anything."></textarea>
+        <div style="margin-top:14px; display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+          <button class="primary" id="beginBtn">Begin the adventure</button>
+          <span class="note">Anyone at the table can start. Late arrivals can still join mid-game.</span>
+        </div>
+        <div class="err-line" id="beginErr"></div>
+        <div class="thinking" id="lobbyThinking" hidden><span class="embers"><i></i><i></i><i></i></span><span></span></div>
+      </div>
+    </div>
+
+    <aside class="card">
+      <h3>At the table</h3>
+      <ul class="table-list" id="tableList"></ul>
+    </aside>
+  </div>
+</section>
+
+<!-- game -->
+<section id="game" hidden>
+  <div class="story-col">
+    <div class="story" id="story" aria-live="polite"></div>
+    <div class="composer">
+      <div class="status" id="statusRow"><span id="status"></span>
+        <button class="ghost" id="resolveBtn" hidden title="Resolve the round without waiting for everyone">Resolve now</button>
+        <button class="ghost" id="newCharBtn" hidden>Make a new character</button>
+      </div>
+      <div class="inputrow">
+        <textarea id="input" rows="1" maxlength="1200" placeholder="What do you do?"></textarea>
+        <button class="primary" id="sendBtn">Act</button>
+      </div>
+      <div class="quick">
+        <button data-cmd="/sheet">Sheet</button>
+        <button data-cmd="/map">Map</button>
+        <button data-fill="/ask ">Ask the GM</button>
+        <button data-fill="/roll 1d20">Roll dice</button>
+        <button data-cmd="/pass">Pass</button>
+        <button data-cmd="/help">Help</button>
+      </div>
+    </div>
+  </div>
+  <aside id="ledger"></aside>
+</section>
+
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined && text !== null) e.textContent = text;
+  return e;
+}
+
+let pid = localStorage.getItem("ed_pid") || "";
+let myName = localStorage.getItem("ed_name") || "";
+let me = null;            // {name, char_id}
+let state = null, lobby = null, turn = null, thinking = "";
+let options = null, es = null, lastPrivate = "", wantNew = false;
+const history = []; let histIdx = -1;
+
+async function api(path, body) {
+  const init = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const r = await fetch(path, init);
+  const data = await r.json().catch(() => ({ error: "The server sent something unexpected." }));
+  if (!r.ok || data.error) throw new Error(data.error || "Request failed (" + r.status + ")");
+  return data;
+}
+
+function setConn(mode) {
+  const c = $("#conn");
+  c.className = "conn " + mode;
+  c.hidden = false;
+  c.querySelector("span").textContent = mode === "online" ? "Connected" : mode === "reconnecting" ? "Reconnecting" : "Connecting";
+}
+
+function connect() {
+  if (es) es.close();
+  setConn("connecting");
+  es = new EventSource("/events?pid=" + encodeURIComponent(pid));
+  es.onopen = () => setConn("online");
+  es.onerror = () => setConn("reconnecting");
+  es.onmessage = (m) => { let ev; try { ev = JSON.parse(m.data); } catch (_) { return; } handle(ev); };
+}
+
+async function join(name) {
+  const r = await api("/api/join", { name, pid });
+  pid = r.pid; myName = r.name;
+  localStorage.setItem("ed_pid", pid);
+  localStorage.setItem("ed_name", myName);
+  me = { name: r.name, char_id: r.char_id };
+  connect();
+}
+
+// ------------------------------------------------------------------ events
+function handle(ev) {
+  switch (ev.kind) {
+    case "hello":
+      if (!ev.you) {
+        if (myName) { join(myName).catch(() => showView("join")); }
+        else showView("join");
+        return;
+      }
+      me = ev.you; state = ev.state; lobby = ev.lobby; turn = ev.turn; thinking = ev.thinking || "";
+      $("#story").replaceChildren();
+      lastPrivate = "";
+      for (const e of ev.backlog || []) addEntry(e, false);
+      render();
+      scrollStory(true);
+      return;
+    case "state": state = ev.data; renderLedger(); renderStatus(); renderWhere(); if (currentView() === "lobby") renderLobby(); return;
+    case "lobby": lobby = ev.data; render(); return;
+    case "turn":
+      turn = ev; thinking = "";
+      if (ev.char_id) addEntry(ev);
+      renderThinking(); renderStatus();
+      return;
+    case "thinking": thinking = ev.text || ""; renderThinking(); return;
+    default:
+      if (["narration", "error", "gameover"].includes(ev.kind)) thinking = "";
+      addEntry(ev);
+      renderThinking();
+  }
+}
+
+// ------------------------------------------------------------------ story
+const D20 = /d20(?: (adv|dis))?\((\d+)(?:,(\d+))?\)/g;
+function kept(m) {
+  const a = +m[2], b = m[3] ? +m[3] : null;
+  return b === null ? a : (m[1] === "adv" ? Math.max(a, b) : Math.min(a, b));
+}
+function partyNames() { return new Set((state?.party || []).map(p => p.name)); }
+
+function rollNode(ev) {
+  const node = el("div", "e roll");
+  const text = ev.text || "";
+  const first = [...text.matchAll(D20)][0];
+  const die = el("span", "die"), shell = el("span"), face = el("b");
+  if (first) {
+    const v = kept(first);
+    face.textContent = v;
+    if (v === 20) die.classList.add("n20");
+    if (v === 1) die.classList.add("n1");
+    if (first[1]) die.title = (first[1] === "adv" ? "Advantage: " : "Disadvantage: ") + first[2] + " and " + first[3];
+  } else {
+    die.classList.add("none");
+    face.textContent = "\u2022";
+  }
+  shell.appendChild(face); die.appendChild(shell); node.appendChild(die);
+  const t = el("span", "rtext");
+  let last = 0;
+  for (const m of text.matchAll(D20)) {
+    t.append(text.slice(last, m.index));
+    const d = el("span", "d", m[0]);
+    const v = kept(m);
+    if (v === 20) d.classList.add("n20");
+    if (v === 1) d.classList.add("n1");
+    t.append(d);
+    last = m.index + m[0].length;
+  }
+  t.append(text.slice(last));
+  node.appendChild(t);
+  const friendly = !ev.actor || partyNames().has(ev.actor);
+  if (ev.success === true) node.classList.add(friendly ? "good" : "bad");
+  if (ev.success === false) node.classList.add(friendly ? "bad" : "good");
+  return node;
+}
+
+function addEntry(ev, scroll = true) {
+  const story = $("#story");
+  const stick = story.scrollHeight - story.scrollTop - story.clientHeight < 140;
+  let node = null;
+  const text = ev.text || "";
+  switch (ev.kind) {
+    case "narration":
+      node = el("div", "e narr");
+      for (const para of text.split(/\n+/)) if (para.trim()) node.appendChild(el("p", null, para.trim()));
+      break;
+    case "player":
+      node = el("div", "e said");
+      node.append(el("span", "who", ev.actor || "Someone"), el("span", "what", text));
+      break;
+    case "roll": node = rollNode(ev); break;
+    case "system": node = el("div", "e sys", text); break;
+    case "private":
+      lastPrivate = text;
+      node = el("div", "e priv");
+      node.append(el("div", "tag", "Only you see this"), el("div", "body", text));
+      if (currentView() === "lobby") renderLobby();
+      break;
+    case "error": node = el("div", "e err", text); break;
+    case "gameover": node = el("div", "e over", text); break;
+    case "turn":
+      node = el("div", "turnmark" + (ev.char_id === me?.char_id ? " mine" : ""), ev.char_id === me?.char_id ? "Your turn" : text.replace(/\.$/, ""));
+      break;
+  }
+  if (!node) return;
+  story.appendChild(node);
+  if (scroll && (stick || ev.kind === "private" || ev.kind === "turn")) scrollStory();
+}
+
+function scrollStory(instant) {
+  const s = $("#story");
+  if (instant) { s.style.scrollBehavior = "auto"; s.scrollTop = s.scrollHeight; s.style.scrollBehavior = ""; }
+  else s.scrollTop = s.scrollHeight;
+}
+
+function renderThinking() {
+  const story = $("#story");
+  let t = $("#thinkingLine");
+  if (thinking) {
+    if (!t) {
+      t = el("div", "thinking"); t.id = "thinkingLine";
+      const dots = el("span", "embers"); dots.append(el("i"), el("i"), el("i"));
+      t.append(dots, el("span"));
+    }
+    t.lastChild.textContent = thinking;
+    story.appendChild(t);   // keep it last
+    scrollStory();
+  } else if (t) t.remove();
+  const lt = $("#lobbyThinking");
+  lt.hidden = !thinking;
+  lt.lastChild.textContent = thinking;
+}
+
+// ------------------------------------------------------------------ views
+function currentView() {
+  if (!me) return "join";
+  const mine = state?.party?.find(p => p.id === me.char_id);
+  if (!me.char_id || wantNew) return "lobby";
+  if (!lobby?.started) return "lobby";
+  if (!mine && state) return "lobby";
+  return "game";
+}
+function showView(v) {
+  const wasGame = !$("#game").hidden;
+  for (const id of ["join", "lobby", "game"]) $("#" + id).hidden = id !== v;
+  document.body.classList.toggle("in-game", v === "game");
+  $("#ledgerToggle").hidden = v !== "game";
+  if (v === "join") { $("#joinName").value = myName; $("#joinName").focus(); }
+  if (v === "game" && !wasGame) requestAnimationFrame(() => scrollStory(true));
+}
+function render() {
+  const v = currentView();
+  showView(v);
+  renderWhere();
+  if (v === "lobby") renderLobby();
+  if (v === "game") { renderLedger(); renderStatus(); }
+  renderThinking();
+}
+
+function renderWhere() {
+  const w = $("#where");
+  w.replaceChildren();
+  if (state?.location && lobby?.started) {
+    w.append(el("b", null, state.location.name), "  \u00b7  Day " + state.day + ", " + state.hour + ":00");
+    if (state.combat) w.append("  \u00b7  Combat, round " + state.combat.round);
+  } else if (me) w.append("Welcome, " + me.name);
+}
+
+async function loadOptions() {
+  if (options) return options;
+  options = await api("/api/options");
+  const bonus = (b) => Object.entries(b).map(([k, v]) => "+" + v + " " + k).join(", ");
+  const anc = $("#ancPicks"); anc.replaceChildren();
+  options.ancestries.forEach((a, i) => {
+    const l = el("label", "pick");
+    const r = el("input"); r.type = "radio"; r.name = "anc"; r.value = a.id; if (i === 0) r.checked = true;
+    const traits = a.traits.join(", ");
+    l.append(r, el("div", "t", a.name), el("div", "s", (a.id === "human" ? "+1 to every ability" : bonus(a.bonus)) + (traits ? ". " + traits.charAt(0).toUpperCase() + traits.slice(1) + "." : "")));
+    anc.appendChild(l);
+  });
+  const cls = $("#clsPicks"); cls.replaceChildren();
+  options.classes.forEach((c, i) => {
+    const l = el("label", "pick");
+    const r = el("input"); r.type = "radio"; r.name = "cls"; r.value = c.id; if (i === 0) r.checked = true;
+    l.append(r, el("div", "t", c.name), el("div", "s", (c.blurb || (c.caster ? "Spellcaster." : "Martial.")) + " d" + c.hit_die + " hit die."));
+    cls.appendChild(l);
+  });
+  syncPicks();
+  return options;
+}
+
+function renderLobby() {
+  const started = !!lobby?.started;
+  const hasChar = !!(me?.char_id) && !wantNew;
+  const head = $("#lobbyHead"); head.replaceChildren();
+  if (!hasChar) {
+    head.append(el("h1", null, started ? "The story is already underway." : "Who are you playing?"),
+      el("p", "lede", started ? "Make a character and you'll step into the scene at the next moment." : "Everyone makes a character, then anyone can start. You can play solo too."));
+  } else {
+    head.append(el("h1", null, "Gathering the party"), el("p", "lede", "Start once everyone at the table has a character. Playing alone? Start whenever you like."));
+  }
+  $("#createForm").hidden = hasChar;
+  $("#beginBox").hidden = !hasChar || started;
+  if (!hasChar) loadOptions().catch(e => { $("#createErr").textContent = e.message; });
+  const sheet = $("#mySheet");
+  sheet.hidden = !lastPrivate; sheet.textContent = lastPrivate;
+
+  const un = (lobby?.unclaimed || []);
+  $("#claimBox").hidden = hasChar || !un.length;
+  const cl = $("#claimList"); cl.replaceChildren();
+  for (const c of un) {
+    const b = el("button", null, c.name + (c.player ? "  (was " + c.player + ")" : ""));
+    b.onclick = async () => {
+      try { const r = await api("/api/claim", { pid, char_id: c.id }); me.char_id = r.char_id; wantNew = false; render(); }
+      catch (e) { $("#createErr").textContent = e.message; }
+    };
+    cl.appendChild(b);
+  }
+
+  const tl = $("#tableList"); tl.replaceChildren();
+  const players = lobby?.players || [];
+  if (!players.length) tl.appendChild(el("li", "note", "Nobody yet."));
+  for (const p of players) {
+    const li = el("li");
+    const d = el("span", "dot" + (p.online ? " on" : ""));
+    li.append(d, el("span", null, p.name + (me && p.name === me.name ? " (you)" : "")), el("span", "c", p.char || "making a character"));
+    tl.appendChild(li);
+  }
+}
+
+// ------------------------------------------------------------------ ledger + status
+function hpClass(hp, max) { const r = hp / Math.max(1, max); return r > 0.5 ? "" : r > 0.25 ? "mid" : "low"; }
+function section(title) { const c = el("div", "card"); c.appendChild(el("h3", null, title)); return c; }
+
+function renderLedger() {
+  const L = $("#ledger");
+  L.replaceChildren();
+  if (!state) return;
+  if (state.location) {
+    const c = el("div", "card");
+    c.append(el("h2", null, state.location.name), el("p", "loc-desc", state.location.description || ""), el("div", "meta", "Day " + state.day + ", " + state.hour + ":00"));
+    L.appendChild(c);
+  }
+  if (state.combat) {
+    const c = section("Foes, round " + state.combat.round);
+    if (!state.enemies.length) c.appendChild(el("div", "note", "None standing."));
+    for (const f of state.enemies) {
+      const row = el("div", "foe" + (f.active ? " active" : ""));
+      const st = el("span", "st " + (f.state === "near death" ? "near" : f.state), f.state + (f.conditions.length ? ", " + f.conditions.join(", ") : ""));
+      row.append(el("span", null, f.name), st);
+      c.appendChild(row);
+    }
+    L.appendChild(c);
+  }
+  const party = section("The party");
+  for (const p of state.party) {
+    const mine = p.id === me?.char_id;
+    const row = el("div", "pc" + (p.active ? " active" : "") + (p.hp <= 0 ? " down" : ""));
+    const r1 = el("div", "r1");
+    const nm = el("span", "nm", p.name);
+    if (mine) nm.appendChild(el("span", "you", "you"));
+    r1.append(nm, el("span", "lbl", p.label));
+    row.append(r1, el("div", "r2", "Played by " + p.player + "  \u00b7  AC " + p.ac + "  \u00b7  " + p.gold + " gold"));
+    const hp = el("div", "hp"), bar = el("div", "bar"), fill = el("i", hpClass(p.hp, p.max_hp));
+    fill.style.width = Math.max(0, Math.min(100, 100 * p.hp / Math.max(1, p.max_hp))) + "%";
+    bar.appendChild(fill);
+    hp.append(bar, el("span", "num", p.dead ? "dead" : p.hp + " / " + p.max_hp));
+    row.appendChild(hp);
+    const conds = [...p.conditions];
+    if (conds.length) {
+      const tags = el("div", "tags");
+      for (const k of conds) tags.appendChild(el("span", "tagc" + (["unconscious", "dying", "poisoned", "paralyzed", "stunned", "frightened", "restrained"].includes(k) ? " warn" : ""), k));
+      row.appendChild(tags);
+    }
+    if (mine) {
+      const g = el("details", "gear"); g.open = true;
+      g.appendChild(el("summary", null, "Your resources"));
+      const slots = Object.entries(p.slots || {});
+      if (slots.length) g.appendChild(line("Spell slots", slots.map(([k, v]) => "level " + k + ": " + v).join(", ")));
+      const feats = Object.entries(p.features || {});
+      if (feats.length) g.appendChild(line("Features", feats.map(([k, v]) => k.replace(/_/g, " ") + " (" + v + ")").join(", ")));
+      const inv = Object.entries(p.inventory || {});
+      g.appendChild(line("Pack", inv.length ? inv.map(([k, v]) => v > 1 ? k + " x" + v : k).join(", ") : "empty"));
+      g.appendChild(line("XP", String(p.xp)));
+      row.appendChild(g);
+    }
+    party.appendChild(row);
+  }
+  L.appendChild(party);
+  if (state.quests.length) {
+    const q = section("Quests");
+    for (const x of state.quests) {
+      const d = el("div", "quest" + (x.status !== "active" ? " done" : ""), x.title);
+      if (x.status !== "active") d.appendChild(el("span", "qs", x.status));
+      q.appendChild(d);
+    }
+    L.appendChild(q);
+  }
+}
+function line(label, value) { const d = el("div"); d.append(el("b", null, label + ": "), value); return d; }
+
+function renderStatus() {
+  const st = $("#status"), row = $("#statusRow"), rb = $("#resolveBtn"), nb = $("#newCharBtn"), input = $("#input");
+  rb.hidden = true; nb.hidden = true; row.classList.remove("mine");
+  if (!state || !lobby?.started || !me) { st.textContent = ""; return; }
+  const party = state.party || [];
+  const mine = party.find(p => p.id === me.char_id);
+  const nameOf = (id) => party.find(p => p.id === id)?.name;
+  if (mine?.dead) {
+    st.textContent = mine.name + " has died. You can watch, or make a new character.";
+    nb.hidden = false;
+    return;
+  }
+  if (state.combat) {
+    const cur = state.combat.current;
+    if (cur === me.char_id) {
+      st.textContent = "Your turn. Attack, cast, dodge, shove, bluff, anything.";
+      row.classList.add("mine");
+      input.placeholder = "What does " + (mine?.name || "your character") + " do?";
+    } else {
+      const who = party.find(p => p.active) || state.enemies.find(e => e.active);
+      st.textContent = who ? who.name + " is acting." : "The enemies are moving.";
+      input.placeholder = "Not your turn yet. Commands like /sheet still work.";
+    }
+    return;
+  }
+  const waiting = turn?.waiting || [];
+  const conscious = party.filter(p => !p.dead && p.hp > 0);
+  input.placeholder = "Describe what you do...";
+  if (mine && mine.hp <= 0) { st.textContent = mine.name + " is unconscious."; return; }
+  if (waiting.includes(me.char_id)) {
+    st.textContent = conscious.length > 1 && waiting.length < conscious.length ? "The others are ready. What do you do?" : "What do you do?";
+    row.classList.add("mine");
+  } else if (waiting.length) {
+    st.textContent = "You're ready. Waiting on " + waiting.map(nameOf).filter(Boolean).join(", ") + ". Type again to change your action.";
+    rb.hidden = false;
+  } else st.textContent = "";
+}
+
+// ------------------------------------------------------------------ actions
+async function send(text) {
+  text = (text || "").trim();
+  if (!text) return;
+  history.unshift(text); if (history.length > 30) history.pop(); histIdx = -1;
+  try {
+    const r = await api("/api/act", { pid, text });
+    if (r.reply) addEntry({ kind: "private", text: r.reply });
+  } catch (e) { addEntry({ kind: "error", text: e.message }); }
+}
+
+function autosize(t) { t.style.height = "auto"; t.style.height = Math.min(180, t.scrollHeight + 2) + "px"; }
+
+$("#joinBtn").onclick = async () => {
+  const n = $("#joinName").value.trim();
+  if (!n) { $("#joinErr").textContent = "Pick a name."; return; }
+  try { $("#joinErr").textContent = ""; pid = ""; await join(n); } catch (e) { $("#joinErr").textContent = e.message; }
+};
+$("#joinName").addEventListener("keydown", e => { if (e.key === "Enter") $("#joinBtn").click(); });
+
+$("#createForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const body = { pid, name: $("#cName").value, ancestry: f.get("anc"), cls: f.get("cls"), method: f.get("method"), backstory: $("#cBack").value };
+  const btn = $("#createBtn"); btn.disabled = true; $("#createErr").textContent = "";
+  try { const r = await api("/api/character", body); me.char_id = r.char_id; wantNew = false; e.target.reset(); render(); }
+  catch (err) { $("#createErr").textContent = err.message; }
+  finally { btn.disabled = false; }
+});
+
+function syncPicks() { document.querySelectorAll(".pick").forEach(p => p.classList.toggle("on", !!p.querySelector("input:checked"))); }
+$("#createForm").addEventListener("change", syncPicks);
+$("#createForm").addEventListener("reset", () => setTimeout(syncPicks, 0));
+
+$("#beginBtn").onclick = async () => {
+  const b = $("#beginBtn"); b.disabled = true; $("#beginErr").textContent = "";
+  try { await api("/api/begin", { pid, premise: $("#premise").value }); }
+  catch (e) { $("#beginErr").textContent = e.message; }
+  finally { setTimeout(() => { b.disabled = false; }, 1500); }
+};
+
+$("#sendBtn").onclick = () => { const t = $("#input"); const v = t.value; t.value = ""; autosize(t); send(v); t.focus(); };
+$("#input").addEventListener("keydown", (e) => {
+  const t = e.target;
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#sendBtn").click(); }
+  else if (e.key === "ArrowUp" && (!t.value || histIdx >= 0) && history.length) {
+    e.preventDefault(); histIdx = Math.min(history.length - 1, histIdx + 1); t.value = history[histIdx]; autosize(t);
+  } else if (e.key === "ArrowDown" && histIdx >= 0) {
+    e.preventDefault(); histIdx -= 1; t.value = histIdx >= 0 ? history[histIdx] : ""; autosize(t);
+  }
+});
+$("#input").addEventListener("input", (e) => autosize(e.target));
+document.querySelectorAll(".quick button").forEach(b => b.addEventListener("click", () => {
+  if (b.dataset.cmd) send(b.dataset.cmd);
+  else { const t = $("#input"); t.value = b.dataset.fill; t.focus(); t.setSelectionRange(t.value.length, t.value.length); autosize(t); }
+}));
+$("#resolveBtn").onclick = () => api("/api/resolve", { pid }).catch(e => addEntry({ kind: "error", text: e.message }));
+$("#newCharBtn").onclick = () => { wantNew = true; render(); };
+$("#ledgerToggle").onclick = () => $("#ledger").classList.toggle("open");
+$("#story").addEventListener("click", () => $("#ledger").classList.remove("open"));
+
+// ------------------------------------------------------------------ start
+if (pid || myName) connect(); else showView("join");
+</script>
+</body>
+</html>

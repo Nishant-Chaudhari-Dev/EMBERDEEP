@@ -1,0 +1,7 @@
+{
+  "leather":    {"name": "Leather armor",    "base": 11, "dex_cap": 99},
+  "studded":    {"name": "Studded leather",  "base": 12, "dex_cap": 99},
+  "scale_mail": {"name": "Scale mail",       "base": 14, "dex_cap": 2},
+  "chain_mail": {"name": "Chain mail",       "base": 16, "dex_cap": 0},
+  "plate":      {"name": "Plate armor",      "base": 18, "dex_cap": 0}
+}

@@ -1,0 +1,19 @@
+{
+  "fire_bolt":       {"name": "Fire Bolt",       "level": 0, "type": "attack", "damage": "1d10", "dtype": "fire", "scales": true},
+  "ray_of_frost":    {"name": "Ray of Frost",    "level": 0, "type": "attack", "damage": "1d8",  "dtype": "cold", "scales": true},
+  "sacred_flame":    {"name": "Sacred Flame",    "level": 0, "type": "save", "save": "DEX", "damage": "1d8", "dtype": "radiant", "half": false, "scales": true},
+  "light":           {"name": "Light",           "level": 0, "type": "utility"},
+  "mage_hand":       {"name": "Mage Hand",       "level": 0, "type": "utility"},
+  "prestidigitation":{"name": "Prestidigitation","level": 0, "type": "utility"},
+  "thaumaturgy":     {"name": "Thaumaturgy",     "level": 0, "type": "utility"},
+  "detect_magic":    {"name": "Detect Magic",    "level": 0, "type": "utility", "note": "cast as a ritual, no slot"},
+  "magic_missile":   {"name": "Magic Missile",   "level": 1, "type": "auto", "damage": "3d4+3", "dtype": "force", "upcast": "1d4+1"},
+  "burning_hands":   {"name": "Burning Hands",   "level": 1, "type": "save", "save": "DEX", "damage": "3d6", "dtype": "fire", "half": true, "area": true, "upcast": "1d6"},
+  "thunderwave":     {"name": "Thunderwave",     "level": 1, "type": "save", "save": "CON", "damage": "2d8", "dtype": "thunder", "half": true, "area": true, "upcast": "1d8"},
+  "guiding_bolt":    {"name": "Guiding Bolt",    "level": 1, "type": "attack", "damage": "4d6", "dtype": "radiant", "upcast": "1d6"},
+  "inflict_wounds":  {"name": "Inflict Wounds",  "level": 1, "type": "attack", "damage": "3d10", "dtype": "necrotic", "upcast": "1d10"},
+  "cure_wounds":     {"name": "Cure Wounds",     "level": 1, "type": "heal", "amount": "1d8+MOD", "upcast": "1d8"},
+  "healing_word":    {"name": "Healing Word",    "level": 1, "type": "heal", "amount": "1d4+MOD", "upcast": "1d4"},
+  "shatter":         {"name": "Shatter",         "level": 2, "type": "save", "save": "CON", "damage": "3d8", "dtype": "thunder", "half": true, "area": true, "upcast": "1d8"},
+  "hold_person":     {"name": "Hold Person",     "level": 2, "type": "save", "save": "WIS", "condition": "paralyzed", "rounds": 10, "save_ends": true}
+}

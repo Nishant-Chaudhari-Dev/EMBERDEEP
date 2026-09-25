@@ -1,0 +1,6 @@
+{
+  "potion of healing":         {"use": "heal", "amount": "2d4+2", "consumed": true},
+  "potion of greater healing": {"use": "heal", "amount": "4d4+4", "consumed": true},
+  "healer's kit":              {"use": "stabilize", "consumed": false},
+  "antitoxin":                 {"use": "cure", "condition": "poisoned", "consumed": true}
+}

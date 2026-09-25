@@ -1,0 +1,7 @@
+{
+  "human":    {"name": "Human",    "bonus": {"STR": 1, "DEX": 1, "CON": 1, "INT": 1, "WIS": 1, "CHA": 1}, "skills": [], "traits": ["versatile"], "features": {}},
+  "elf":      {"name": "Elf",      "bonus": {"DEX": 2, "INT": 1}, "skills": ["perception"], "traits": ["darkvision", "trance: needs only 4 hours of rest"], "features": {}},
+  "dwarf":    {"name": "Dwarf",    "bonus": {"CON": 2, "WIS": 1}, "skills": [], "traits": ["darkvision", "resistant to poison"], "features": {}},
+  "halfling": {"name": "Halfling", "bonus": {"DEX": 2, "CHA": 1}, "skills": [], "traits": ["lucky: rerolls natural 1s on d20s", "brave"], "features": {}},
+  "half_orc": {"name": "Half-Orc", "bonus": {"STR": 2, "CON": 1}, "skills": ["intimidation"], "traits": ["darkvision", "relentless endurance"], "features": {"relentless": 1}}
+}
