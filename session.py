@@ -34,6 +34,7 @@ Commands:
 class Session:
     def __init__(self, llm, state=None, emit=None, seed=None, debug=False):
         self.engine = Engine(state or GameState(), dice=Dice(seed))
+        self.table_dice = Dice()   # player /roll gets its own dice so it never shifts a seeded game's rolls
         self.gm = GameMaster(llm, self.engine, log_fn=self._debug if debug else None)
         self.emit_fn = emit or (lambda ev: None)
         self.pending = {}
@@ -240,7 +241,12 @@ class Session:
             return
         self._rolls([r])
         results = [r]
-        if r.get("extra_action"):
+        cb = self.s.combat
+        keep_turn = r.get("extra_action")
+        if not keep_turn and cb and pc.id in cb.surged:   # the extra action Action Surge granted
+            cb.surged.remove(pc.id)
+            keep_turn = True
+        if keep_turn:
             end = self.engine.check_combat_end()
             if end:
                 results.append(end)
@@ -264,25 +270,43 @@ class Session:
                          "rescued, whatever fits the enemies. Use effects for lost items or a move.")
         elif outcome == "victory":
             situation = "Combat is over and the party won. Describe the aftermath and what they notice now."
-        self.emit("thinking", "The GM narrates...")
-        narration, effects = self.gm.narrate(declared, results, situation)
-        self.emit("narration", narration)
-        for note in self.engine.apply_effects(effects):
-            self.emit("system", note)
-        self._notes()
+        narration = self._tell(declared, results, situation)
         if self.s.combat and not self.engine.current_pc():
             more = self.engine.run_until_pc()   # an ambush: enemies faster than the party act first
             if more:
                 self._rolls(more)
-                n2, e2 = self.gm.narrate([], more)
-                self.emit("narration", n2)
-                for note in self.engine.apply_effects(e2):
-                    self.emit("system", note)
-                narration += "\n" + n2
+                narration += "\n" + self._tell([], more)
+        woke = self.engine.revive_if_party_down()
+        if woke:
+            self.emit("system", woke)
+            narration += "\n" + woke
         self.s.log.append({"role": "players", "text": " | ".join(f"{p.name}: {t}" for p, t in declared) or "(enemies act)"})
-        self.s.log.append({"role": "gm", "text": narration})
+        self.s.log.append({"role": "gm", "text": narration.strip()})
         self._compress_memory()
         self.autosave()
+
+    def _tell(self, declared, results, situation="") -> str:
+        """Narrate results the engine already applied and apply the narrator's effects. If the model
+        is unreachable the results still stand, so say that instead of 'your action was not used'."""
+        self.emit("thinking", "The GM narrates...")
+        try:
+            narration, effects = self.gm.narrate(declared, results, situation)
+        except LLMError as e:
+            self.emit("error", f"{e}  (The rolls above already happened; only the narration is missing.)")
+            return "; ".join(r["text"] for r in results if r.get("text"))
+        self.emit("narration", narration)
+        for note in self.engine.apply_effects(effects):
+            self.emit("system", note)
+        self._notes()
+        return narration
+
+    def wake_if_party_down(self) -> bool:
+        """For a game loaded with everyone at 0 HP out of combat."""
+        note = self.engine.revive_if_party_down()
+        if note:
+            self.emit("system", note)
+            self.s.log.append({"role": "gm", "text": note})
+        return bool(note)
 
     def _compress_memory(self):
         if len(self.s.log) < SUMMARIZE_AT:
@@ -318,7 +342,7 @@ class Session:
             return f"You are at {loc.name}. {loc.description}\nRoutes from here: {exits}\nOther known places: {known}"
         if cmd == "roll":
             try:
-                r = e.dice.roll(arg or "1d20")
+                r = self.table_dice.roll(arg or "1d20")
             except ValueError as ex:
                 return str(ex)
             self.emit("roll", f"{pc.name if pc else 'Someone'} rolls {arg or '1d20'}: {r.detail} = {r.total}", actor=pc.name if pc else "")

@@ -13,6 +13,10 @@ from .dice import Dice
 from .models import Character, GameState, Location, Monster, NPC, Quest
 
 
+ACTIVE_FEATURES = ("second_wind", "action_surge")   # everything else (sneak attack, relentless...) is passive
+MAX_NARRATED_SKIP = 3   # rounds a narrated paralyzed/stunned/unconscious can last
+
+
 def result(actor, kind, text, success=None, **kw) -> dict:
     d = {"actor": actor, "kind": kind, "text": text, "success": success,
          "refund": False, "extra_action": False}
@@ -63,23 +67,26 @@ class Engine(CombatMixin):
         return self.s.characters.get(cid) or self.s.monsters.get(cid)
 
     def find(self, name, pcs=True, monsters=True, npcs=True):
-        """Fuzzy lookup of a character, monster or NPC by what the AI or player called it."""
+        """Fuzzy lookup of a character, monster or NPC by what the AI or player called it.
+        Partial matches compare whole words and try monsters and NPCs before the party, so
+        "the goblin" never lands on a hero whose name happens to be inside the word."""
         key = _norm(name)
         if not key:
             return None
         pool = []
-        if pcs:
-            pool += [(p.name, p) for p in self.s.characters.values()]
         if monsters:
             pool += [(m.name, m) for m in self.s.monsters.values() if m.alive]
         if npcs:
             pool += [(n.name, n) for n in self.s.npcs.values() if n.alive]
+        if pcs:
+            pool += [(p.name, p) for p in self.s.characters.values()]
         for label, obj in pool:
             if _norm(label) == key or getattr(obj, "id", None) == name:
                 return obj
+        kw = key.split()
         for label, obj in pool:
-            nl = _norm(label)
-            if key in nl or nl in key or nl.split(" ")[0] == key.split(" ")[0]:
+            lw = _norm(label).split()
+            if lw and (set(kw) <= set(lw) or set(lw) <= set(kw) or lw[0] == kw[0]):
                 return obj
         labels = [_norm(l) for l, _ in pool]
         close = difflib.get_close_matches(key, labels, n=1, cutoff=0.6)
@@ -215,6 +222,23 @@ class Engine(CombatMixin):
             t.death_saves = {"success": 0, "fail": 0}
         return f"{t.name} regains {t.hp - before} HP ({t.hp}/{t.max_hp})"
 
+    def revive_if_party_down(self):
+        """Out of combat nobody can act while every survivor is at 0 HP, so treat it like a defeat:
+        they come to at 1 HP a while later (5e: a stable creature wakes after 1d4 hours)."""
+        if self.s.combat:
+            return None
+        alive = [p for p in self.s.characters.values() if not p.dead]
+        if not alive or any(p.conscious for p in alive):
+            return None
+        hours = self.dice.die(4)
+        for p in alive:
+            p.hp = 1
+            p.conditions.pop("unconscious", None)
+            p.conditions.pop("stable", None)
+            p.death_saves = {"success": 0, "fail": 0}
+        self.advance_time(hours)
+        return f"Everyone is down. {hours} hour{'s' if hours > 1 else ''} later, the party comes to at 1 HP."
+
     def _death_fail(self, pc, n) -> str:
         pc.conditions.pop("stable", None)
         pc.death_saves["fail"] += n
@@ -256,6 +280,8 @@ class Engine(CombatMixin):
             del c.conditions[n]
         if self.s.combat and c.id in self.s.combat.sneak_used:
             self.s.combat.sneak_used.remove(c.id)
+        if self.s.combat and c.id in self.s.combat.surged:   # an unused surge doesn't carry over
+            self.s.combat.surged.remove(c.id)
 
     def end_turn(self, c) -> list:
         out = []
@@ -356,13 +382,14 @@ class Engine(CombatMixin):
                        xp=t["xp"], multiattack=t.get("multiattack", 1), traits=t.get("traits", []))
             name = name or t["name"]
         else:
-            ac, hp, bonus, dmg, n_atk, xp = R.CR_TEMPLATES[R.nearest_cr(cr or 0.25)]
+            ac, hp, bonus, dmg, n_atk, xp = R.CR_TEMPLATES[R.nearest_cr(0.25 if cr is None else cr)]   # CR 0 is real
             tpl = dict(ac=ac, hp=hp, attacks=[{"name": "attack", "bonus": bonus, "damage": dmg, "type": "bludgeoning"}],
                        abilities={a: 12 for a in R.ABILITIES}, xp=xp, multiattack=n_atk, traits=[])
             base = "custom"
         count = max(1, min(int(count or 1), 8))
         room = self.encounter_budget() - sum(x.xp for x in self.enemies())
-        count = max(1, min(count, room // max(1, tpl["xp"])))
+        floor = 0 if self.enemies() else 1   # one foe is always allowed, but only to start a fight
+        count = max(floor, min(count, room // max(1, tpl["xp"])))
         existing = {x.name for x in self.s.monsters.values()}
         made = []
         for i in range(count):
@@ -407,8 +434,9 @@ class Engine(CombatMixin):
 
     # ------------------------------------------------------------------ action resolution
     def resolve(self, a: dict) -> dict:
-        """Resolve one adjudicated action. a comes from the AI adjudicator (already normalized)."""
-        pc = self.find_pc(a.get("actor", ""))
+        """Resolve one adjudicated action. a comes from the AI adjudicator (already normalized).
+        The id wins over the name, so two heroes called "Bob" each act as themselves."""
+        pc = self.s.characters.get(a.get("actor_id", "")) or self.find_pc(a.get("actor", ""))
         if pc is None:
             return result(a.get("actor", "?"), "none", "")
         if not pc.conscious:
@@ -605,17 +633,23 @@ class Engine(CombatMixin):
     def _do_feature(self, pc, a, mode):
         f = _slug(a.get("using", ""))
         f = "second_wind" if "second" in f or "wind" in f else ("action_surge" if "surge" in f else f)
+        if f.startswith("sneak"):   # passive: it rides on an ordinary attack and is never spent on its own
+            return self._do_attack(pc, dict(a, using=""), mode)
+        label = f.replace("_", " ") or "that"
+        if f not in ACTIVE_FEATURES:
+            text = (f"{label.capitalize()} works on its own; just describe what {pc.name} does." if f in pc.features
+                    else f"{pc.name} has no feature called {label}.")
+            return result(pc.name, "feature", text, refund=True)
         if pc.features.get(f, 0) <= 0:
-            if f in ("second_wind", "action_surge"):
-                return result(pc.name, "feature", f"{pc.name} has no uses of {f.replace('_', ' ')} left.", refund=True)
-            return result(pc.name, "feature", "", None)
+            return result(pc.name, "feature", f"{pc.name} has no uses of {label} left.", refund=True)
+        if f == "action_surge" and not self.s.combat:
+            return result(pc.name, "feature", "Action Surge only matters in combat, so it's saved for later.", refund=True)
         pc.features[f] -= 1
         if f == "second_wind":
             amt = self.dice.roll(f"1d10+{pc.level}").total
             return result(pc.name, "feature", f"{pc.name} uses Second Wind: {self.heal(pc, amt)}", True, extra_action=True)
-        if f == "action_surge":
-            return result(pc.name, "feature", f"{pc.name} uses Action Surge and may act again.", True, extra_action=True)
-        return result(pc.name, "feature", f"{pc.name} uses {f.replace('_', ' ')}.", True)
+        self.s.combat.surged.append(pc.id)
+        return result(pc.name, "feature", f"{pc.name} uses Action Surge and gets two actions this turn.", True, extra_action=True)
 
     def _do_dodge(self, pc, a, mode):
         self.add_condition(pc, "dodging", 0, "start")
@@ -725,9 +759,10 @@ class Engine(CombatMixin):
     def apply_effects(self, effects: list) -> list:
         """Validate and apply story consequences proposed by the narrator. Returns UI notes."""
         out = []
+        dealt = {}   # creature id -> narration damage so far, so the cap holds per target
         for e in (effects or [])[:12]:
             try:
-                msg = self._apply(e)
+                msg = self._apply(e, dealt)
             except Exception as exc:  # a malformed effect never crashes the game
                 msg = None
                 self.notes.append(f"(ignored malformed effect {e.get('op')}: {exc})")
@@ -735,7 +770,7 @@ class Engine(CombatMixin):
                 out.append(msg)
         return out
 
-    def _apply(self, e) -> str:
+    def _apply(self, e, dealt) -> str:
         op = e.get("op", "")
         tgt, val, amt, txt = str(e.get("target", "")), str(e.get("value", "")), int(e.get("amount") or 0), str(e.get("text", ""))
         lvl = max(1, round(sum(p.level for p in self.pcs()) / max(1, len(self.pcs()))))
@@ -744,7 +779,12 @@ class Engine(CombatMixin):
             if not t:
                 return None
             if op == "damage":
-                amt = max(1, min(amt, 6 * lvl + 4))
+                room = 6 * lvl + 4 - dealt.get(t.id, 0)
+                if room <= 0:
+                    self.notes.append(f"(ignored more damage to {t.name}: narration already dealt the most it can this moment)")
+                    return None
+                amt = max(1, min(amt, room))
+                dealt[t.id] = dealt.get(t.id, 0) + amt
                 return f"{t.name} takes {amt} damage{f' ({txt})' if txt else ''}{self.damage(t, amt)}"
             return self.heal(t, max(1, amt))
         if op in ("give_item", "take_item"):
@@ -778,8 +818,12 @@ class Engine(CombatMixin):
             t = self.find(tgt, npcs=False)
             if not t or not val:
                 return None
-            self.add_condition(t, val, max(0, min(amt, 100)))
-            return f"{t.name} is {val.lower()}"
+            name = val.lower()[:30]
+            rounds = max(0, min(amt, 100))
+            if R.CONDITIONS.get(name, {}).get("skip"):   # losing turns is never open-ended from narration
+                rounds = min(rounds, MAX_NARRATED_SKIP) if rounds else MAX_NARRATED_SKIP
+            self.add_condition(t, name, rounds)
+            return f"{t.name} is {name}" + (f" for {rounds} round{'s' if rounds > 1 else ''}" if rounds else "")
         if op == "remove_condition":
             t = self.find(tgt, npcs=False)
             if t and t.conditions.pop(val.lower(), None) is not None:
@@ -824,6 +868,9 @@ class Engine(CombatMixin):
             return None
         if op == "spawn_enemy":
             made = self.spawn(tgt or "Foe", val, amt or 1, txt)
+            if not made:
+                self.notes.append(f"(no {tgt or 'more enemies'} joined: the encounter budget is already spent)")
+                return None
             if not self.s.combat:
                 self.notes.append(self.start_combat())
             return "Enemies appear: " + ", ".join(m.name for m in made)
