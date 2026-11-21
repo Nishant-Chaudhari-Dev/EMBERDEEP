@@ -1,0 +1,14 @@
+# Game saves (autosave.json, /save files). Keep the folder itself.
+saves/*
+!saves/.keep
+
+# Downloaded models are multi-GB GGUF files. Keep the folder's README.
+models/*
+!models/README.txt
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
