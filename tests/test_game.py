@@ -1,7 +1,9 @@
 """Run with:  python -m unittest discover tests
 Uses a scripted fake model so every test is deterministic and needs no GPU."""
+import io
 import json
 import sys
+import time
 import unittest
 from pathlib import Path
 
@@ -10,7 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from engine.dice import Dice
 from engine.engine import Engine
 from engine.models import GameState
-from gm.llm import LLM
+from gm.llm import LLM, LLMError
+from server import Hub, make_handler
 from session import Session
 
 
@@ -204,6 +207,195 @@ class SessionTests(unittest.TestCase):
         llm.chat = lambda *a, **k: "I am a teapot, not JSON"
         s.submit(pc.id, "I dance")
         self.assertTrue(any(e["kind"] == "narration" for e in ev))
+
+    def test_party_down_out_of_combat_wakes_up(self):
+        s, llm, ev = new_session(n_players=1)
+        pc = next(iter(s.s.characters.values()))
+        pc.features = {}                           # no last stand, no relentless endurance
+        pc.hp = 5
+        llm.push("narrate", {"narration": "The floor gives way!", "effects": [
+            {"op": "damage", "target": "Brakka", "value": "", "amount": 8, "text": "a pit trap"}]})
+        s.submit(pc.id, "I open the chest")
+        self.assertEqual(pc.hp, 1)                 # not stuck at 0 HP with nobody able to act
+        self.assertFalse(pc.dead)
+        self.assertNotIn("unconscious", pc.conditions)
+        self.assertTrue(any("comes to" in e["text"] for e in ev if e["kind"] == "system"))
+
+    def test_action_surge_gives_two_actions(self):
+        s, llm, _ = new_session(n_players=1, seed=3)
+        e = s.engine
+        pc = next(iter(s.s.characters.values()))
+        pc.features["action_surge"] = pc.max_features["action_surge"] = 1
+        r = e.resolve(act("Brakka", "feature", using="action_surge"))
+        self.assertTrue(r["refund"])               # out of combat it's kept for later
+        self.assertEqual(pc.features["action_surge"], 1)
+        e.spawn("Zombie", "zombie", 1)             # 22 HP: survives any single longsword hit
+        e.start_combat()
+        e.run_until_pc()
+        self.assertIs(e.current_pc(), pc)
+        start_round = s.s.combat.round
+        llm.push("adjudicate", {"actions": [act("Brakka", "feature", using="action_surge")]})
+        s.submit(pc.id, "Action Surge!")
+        self.assertIs(e.current_pc(), pc)
+        llm.push("adjudicate", {"actions": [act("Brakka", "attack", using="longsword", targets=["zombie"])]})
+        s.submit(pc.id, "I swing")
+        self.assertIs(e.current_pc(), pc)          # the extra action
+        self.assertEqual(s.s.combat.round, start_round)
+        llm.push("adjudicate", {"actions": [act("Brakka", "attack", using="longsword", targets=["zombie"])]})
+        s.submit(pc.id, "I swing again")
+        self.assertTrue(s.s.combat is None or s.s.combat.round == start_round + 1)
+
+    def test_narration_failure_keeps_results(self):
+        s, llm, ev = new_session(n_players=1)
+        pc = next(iter(s.s.characters.values()))
+        real_chat = llm.chat
+
+        def chat(messages, schema=None, **kw):
+            if schema and "effects" in schema.get("properties", {}):
+                raise LLMError("Can't reach Ollama.")
+            return real_chat(messages, schema=schema, **kw)
+
+        llm.chat = chat
+        llm.push("adjudicate", {"actions": [act("Brakka", "item", using="potion of healing")]})
+        s.submit(pc.id, "I drink my potion")
+        self.assertNotIn("potion of healing", pc.inventory)
+        errors = [e["text"] for e in ev if e["kind"] == "error"]
+        self.assertTrue(any("already happened" in t for t in errors))
+        self.assertFalse(any("not used" in t for t in errors))
+        self.assertIn("potion", s.s.log[-1]["text"])   # the round still reaches the log and autosave
+
+    def test_duplicate_names_act_as_themselves(self):
+        llm = ScriptedLLM()
+        s = Session(llm, seed=1)
+        b1 = s.add_character("Ann", "Bob", "human", "fighter")
+        b2 = s.add_character("Mo", "Bob", "elf", "wizard")
+        s.begin("")
+        llm.push("adjudicate", {"actions": [act("Bob"), act("Bob", "dodge")]})
+        s.submit(b1.id, "I wait")
+        s.submit(b2.id, "I get ready to dodge")
+        self.assertIn("dodging", b2.conditions)
+        self.assertNotIn("dodging", b1.conditions)
+
+
+class GuardrailTests(unittest.TestCase):
+    def test_target_lookup_prefers_enemies(self):
+        e = Engine(GameState(), dice=Dice(1))
+        li = e.create_character("Li", "p", "human", "fighter")
+        e.spawn("Goblin", "goblin", 2)             # "Goblin 1" and "Goblin 2"; "li" is inside "goblin"
+        self.assertEqual(e.find("the goblin").kind, "monster")
+        self.assertIs(e.find("Li"), li)
+        self.assertIsNone(e.find("dragon"))
+
+    def test_narration_damage_capped_per_target(self):
+        e = Engine(GameState(), dice=Dice(1))
+        wiz = e.create_character("Lise", "p", "elf", "wizard")
+        e.apply_effects([{"op": "damage", "target": "Lise", "value": "", "amount": 99, "text": "rocks"},
+                         {"op": "damage", "target": "Lise", "value": "", "amount": 99, "text": "more rocks"}])
+        self.assertEqual(wiz.hp, 0)
+        self.assertFalse(wiz.dead)                 # two effects no longer stack into an outright kill
+
+    def test_roll_limits(self):
+        d = Dice(1)
+        for bad in ("999999999d6", "1d0", "0d6"):
+            with self.assertRaises(ValueError):
+                d.roll(bad)
+        self.assertEqual(len(d.roll("100d6").dice), 100)
+
+    def test_narrated_incapacitation_is_capped(self):
+        e = Engine(GameState(), dice=Dice(1))
+        pc = e.create_character("A", "p", "human", "fighter")
+        e.apply_effects([{"op": "condition", "target": "A", "value": "Paralyzed", "amount": 0, "text": ""},
+                         {"op": "condition", "target": "A", "value": "poisoned", "amount": 0, "text": ""}])
+        self.assertEqual(pc.conditions["paralyzed"]["rounds"], 3)
+        self.assertEqual(pc.conditions["poisoned"]["rounds"], 0)   # non-incapacitating: until removed
+
+    def test_spawn_floor_only_starts_a_fight(self):
+        e = Engine(GameState(), dice=Dice(1))
+        e.create_character("A", "p", "human", "fighter")
+        e.apply_effects([{"op": "spawn_enemy", "target": "Ogre", "value": "ogre", "amount": 1, "text": ""}] * 4)
+        self.assertEqual(len(e.enemies()), 1)
+
+    def test_passive_features_are_not_spent(self):
+        e = Engine(GameState(), dice=Dice(1))
+        rogue = e.create_character("Pip", "p", "halfling", "rogue")
+        orc = e.create_character("Grul", "p", "half_orc", "fighter")
+        e.spawn("Goblin", "goblin", 1)
+        r = e.resolve(act("Pip", "feature", using="sneak_attack", targets=["goblin"]))
+        self.assertEqual(r["kind"], "attack")      # treated as an attack, not a spent feature
+        self.assertEqual(rogue.features["sneak_attack"], 1)
+        r = e.resolve(act("Grul", "feature", using="relentless"))
+        self.assertTrue(r["refund"])
+        self.assertEqual(orc.features["relentless"], 1)
+
+    def test_custom_cr_zero(self):
+        e = Engine(GameState(), dice=Dice(1))
+        e.create_character("A", "p", "human", "fighter")
+        m = e.spawn("Villager", "custom:0")[0]
+        self.assertEqual((m.hp, m.xp), (4, 10))    # the CR 0 template, not CR 1/4
+
+    def test_natural_20_death_save_acts_now(self):
+        class Nat20(Dice):
+            def d20(self, mode="normal", lucky=False):
+                return 20, [20]
+
+        e = Engine(GameState(), dice=Nat20(1))
+        e.create_character("A", "p", "human", "fighter")
+        b = e.create_character("B", "p", "human", "fighter")
+        e.spawn("Goblin", "goblin", 1)
+        e.start_combat()
+        b.features = {}
+        e.damage(b, b.hp)
+        e.s.combat.index = e.s.combat.order.index(b.id)
+        e.run_until_pc()
+        self.assertEqual(b.hp, 1)
+        self.assertIs(e.current_pc(), b)           # back up and it's still their turn
+
+
+class ServerTests(unittest.TestCase):
+    def test_table_roll_keeps_seeded_dice(self):
+        s, _, _ = new_session(n_players=1)
+        pc = next(iter(s.s.characters.values()))
+        before = s.engine.dice.rng.getstate()
+        s.command(pc.id, "/roll 3d6")
+        self.assertEqual(s.engine.dice.rng.getstate(), before)
+
+    def test_read_only_command_retries_a_torn_read(self):
+        hub = Hub(ScriptedLLM())
+        pid = hub.join("Ann")["pid"]
+        real, calls = hub.session.command, []
+
+        def flaky(char_id, text):
+            calls.append(text)
+            if len(calls) == 1:
+                raise RuntimeError("dictionary changed size during iteration")
+            return real(char_id, text)
+
+        hub.session.command = flaky
+        self.assertTrue(hub.act(pid, "/help")["reply"].startswith("Type what"))
+        self.assertEqual(len(calls), 2)
+
+    def test_negative_content_length_rejected(self):
+        handler = make_handler(Hub(ScriptedLLM()))
+        h = handler.__new__(handler)
+        h.headers = {"Content-Length": "-1"}
+        h.rfile = io.BytesIO(b"")
+        with self.assertRaises(ValueError):
+            h._body()
+
+    def test_events_reach_a_new_browser_once(self):
+        hub = Hub(ScriptedLLM())
+        hub.on_event({"kind": "system", "text": "before", "t": time.time()})
+        sid, q, hello = hub.subscribe("")
+        hub.on_event({"kind": "system", "text": "after", "t": time.time()})
+        live = []
+        while not q.empty():
+            live.append(q.get_nowait().get("text"))
+        replayed = [e["text"] for e in hello["backlog"]]
+        self.assertIn("before", replayed)
+        self.assertNotIn("before", live)
+        self.assertIn("after", live)
+        self.assertNotIn("after", replayed)
+        hub.unsubscribe(sid)
 
 
 if __name__ == "__main__":

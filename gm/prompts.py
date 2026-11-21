@@ -115,7 +115,7 @@ RULES FOR NARRATION
 EFFECTS (only for consequences you introduce; empty list is fine). Unused fields: "" or 0.
 damage / heal: target, amount, text = cause | give_item / take_item: target = character, value = item, amount = qty
 gold: target = character, amount (negative = spend) | xp: amount (for clever non-combat achievements, 25 to 100)
-condition / remove_condition: target, value = condition, amount = rounds (0 = until removed)
+condition / remove_condition: target, value = condition, amount = rounds (0 = until removed; paralyzed, stunned and unconscious last at most 3)
 move: value = place name, text = one-line description if new | add_npc: target = name, value = friendly|neutral|hostile, text = who they are
 update_npc: target = name, value = friendly|neutral|hostile|dead, text = what changed | quest: target = title, value = active|done|failed, text = notes
 flag: target = key, value = fact to remember | time: amount = hours passed | end_combat: enemies surrender or flee

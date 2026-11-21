@@ -34,6 +34,7 @@ PRIVATE_BACKLOG = 40
 MAX_BODY = 32_000
 MAX_TEXT = 1200
 READ_ONLY = {"help", "h", "?", "sheet", "party", "quests", "map", "roll"}   # answered instantly, no model
+READ_RETRIES = 3
 
 
 class Hub:
@@ -86,12 +87,13 @@ class Hub:
 
     def lobby(self):
         s = self.session.s
+        chars = dict(s.characters)   # a copy: the worker may add a character while we read
         online = collections.Counter(p for p, _ in self.subs.values())
         claimed = {p["char_id"] for p in self.players.values() if p["char_id"]}
         players = [{"name": p["name"], "online": online[pid] > 0,
-                    "char": s.characters[p["char_id"]].name if p["char_id"] in s.characters else ""}
+                    "char": chars[p["char_id"]].name if p["char_id"] in chars else ""}
                    for pid, p in self.players.items()]
-        unclaimed = [{"id": c.id, "name": c.name, "player": c.player} for c in s.characters.values() if c.id not in claimed]
+        unclaimed = [{"id": c.id, "name": c.name, "player": c.player} for c in chars.values() if c.id not in claimed]
         return {"kind": "lobby", "t": time.time(), "data": {"players": players, "started": s.started, "unclaimed": unclaimed}}
 
     def push_lobby(self):
@@ -99,20 +101,23 @@ class Hub:
             ev = self.lobby()
         self.on_event(ev)
 
-    def hello(self, pid):
-        with self.lock:
-            p = self.players.get(pid)
-            events = sorted(list(self.backlog) + list(self.private.get(pid, [])), key=lambda e: e.get("t", 0))
-            return {"kind": "hello", "t": time.time(), "you": ({"name": p["name"], "char_id": p["char_id"]} if p else None),
-                    "backlog": events, "state": self.last_state.get("data"), "turn": self.last_turn,
-                    "lobby": self.lobby()["data"], "thinking": self.thinking}
+    def _hello(self, pid):
+        """Caller holds self.lock."""
+        p = self.players.get(pid)
+        events = sorted(list(self.backlog) + list(self.private.get(pid, [])), key=lambda e: e.get("t", 0))
+        return {"kind": "hello", "t": time.time(), "you": ({"name": p["name"], "char_id": p["char_id"]} if p else None),
+                "backlog": events, "state": self.last_state.get("data"), "turn": self.last_turn,
+                "lobby": self.lobby()["data"], "thinking": self.thinking}
 
     def subscribe(self, pid):
+        """Register the queue and snapshot the backlog under one lock, so every event lands in
+        exactly one of them and nothing shows up twice for a browser that is just connecting."""
         sid, q = uuid.uuid4().hex, queue.Queue()
         with self.lock:
             self.subs[sid] = (pid, q)
+            hello = self._hello(pid)
         self.push_lobby()
-        return sid, q
+        return sid, q, hello
 
     def unsubscribe(self, sid):
         with self.lock:
@@ -164,7 +169,7 @@ class Hub:
                 p = self.players[pid]
             if not p["char_id"]:   # returning after a restart: reclaim the character with your player name
                 claimed = {x["char_id"] for x in self.players.values() if x["char_id"]}
-                for c in self.session.s.characters.values():
+                for c in list(self.session.s.characters.values()):
                     if c.player.lower() == p["name"].lower() and c.id not in claimed:
                         p["char_id"] = c.id
                         break
@@ -253,7 +258,7 @@ class Hub:
         if text.startswith("/"):
             cmd = text[1:].split(" ", 1)[0].lower()
             if cmd in READ_ONLY:
-                return {"reply": self.session.command(char_id, text)}
+                return {"reply": self._read_only(char_id, text)}
         elif not char_id:
             return {"reply": "Make or pick a character first."}
 
@@ -264,6 +269,18 @@ class Hub:
 
         self.run(job)
         return {"queued": True}
+
+    def _read_only(self, char_id, text):
+        """Instant commands run on the request thread instead of queueing behind the model, so the
+        worker can change a dict mid-read ('dictionary changed size during iteration'). These commands
+        never change game state, so reading again is safe."""
+        for _ in range(READ_RETRIES):
+            try:
+                return self.session.command(char_id, text)
+            except RuntimeError as e:
+                if isinstance(e, LLMError):
+                    raise
+        return "The table is busy for a moment. Try that again."
 
     def resolve(self, pid):
         if pid not in self.players:
@@ -281,6 +298,7 @@ class Hub:
             with s.lock:
                 if s.s.combat and not s.engine.current_pc():
                     s._rolls(s.engine.run_until_pc())
+                s.wake_if_party_down()
                 s.push_state()
                 s.prompt()
         self.run(go)
@@ -306,6 +324,8 @@ def make_handler(hub):
 
         def _body(self):
             n = int(self.headers.get("Content-Length") or 0)
+            if n < 0:   # read(-1) would block until the client hangs up
+                raise ValueError("Bad request.")
             if n > MAX_BODY:
                 raise ValueError("Request too large.")
             raw = self.rfile.read(n) if n else b"{}"
@@ -366,9 +386,9 @@ def make_handler(hub):
             self.send_header("Cache-Control", "no-cache")
             self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
-            sid, q = hub.subscribe(pid)
+            sid, q, hello = hub.subscribe(pid)
             try:
-                self._send(hub.hello(pid))
+                self._send(hello)
                 while True:
                     try:
                         ev = q.get(timeout=15)

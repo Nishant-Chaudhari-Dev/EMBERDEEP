@@ -72,8 +72,9 @@ class CombatMixin:
                 if c.hp == 0:
                     if "stable" not in c.conditions:
                         out.append(_r(c.name, "death_save", self.death_save(c)))
-                    self.next_turn()
-                    continue
+                    if not c.conscious:   # a natural 20 brings them back up in time to act this turn
+                        self.next_turn()
+                        continue
                 stuck = next((n for n in c.conditions if R.CONDITIONS.get(n, {}).get("skip")), None)
                 if stuck:
                     out.append(_r(c.name, "condition", f"{c.name} is {stuck} and cannot act."))

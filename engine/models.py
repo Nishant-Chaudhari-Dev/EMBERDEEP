@@ -108,6 +108,7 @@ class Combat:
     xp_pool: int = 0
     skip_once: list = field(default_factory=list)
     sneak_used: list = field(default_factory=list)
+    surged: list = field(default_factory=list)      # PCs owed one more action this turn (Action Surge)
 
     def current(self) -> str:
         return self.order[self.index] if self.order else ""

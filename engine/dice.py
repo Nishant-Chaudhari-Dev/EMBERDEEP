@@ -4,6 +4,8 @@ import re
 from dataclasses import dataclass, field
 
 _DIE = re.compile(r"(\d*)d(\d+)(?:k([hl])(\d+))?")
+MAX_DICE = 100      # per term; /roll is open to every player, so '999999999d6' must not hang the game
+MAX_SIDES = 1000
 
 
 @dataclass
@@ -34,6 +36,8 @@ class Dice:
             if m:
                 n = int(m.group(1) or 1) * (2 if crit else 1)
                 sides = int(m.group(2))
+                if not (1 <= n <= MAX_DICE and 1 <= sides <= MAX_SIDES):
+                    raise ValueError(f"Bad dice expression: {expr!r} (up to {MAX_DICE} dice of up to {MAX_SIDES} sides)")
                 rolls = [self.die(sides) for _ in range(n)]
                 used = rolls
                 if m.group(3):

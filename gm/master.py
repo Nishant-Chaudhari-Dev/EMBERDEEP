@@ -38,12 +38,15 @@ class GameMaster:
         except Exception as exc:
             self.log_fn("adjudicate failed", exc)
         raw = (data or {}).get("actions") or []
-        out = []
+        out, used = [], set()
         for i, (pc, text) in enumerate(declared):
-            match = next((a for a in raw if isinstance(a, dict) and str(a.get("actor", "")).lower() == pc.name.lower()), None)
-            if match is None and i < len(raw) and isinstance(raw[i], dict):
-                match = raw[i]
-            out.append(self._normalize(match or {}, pc, text))
+            j = next((k for k, a in enumerate(raw) if k not in used and isinstance(a, dict)
+                      and str(a.get("actor", "")).lower() == pc.name.lower()), None)
+            if j is None and i < len(raw) and i not in used and isinstance(raw[i], dict):
+                j = i
+            if j is not None:
+                used.add(j)   # each model entry answers one character, even if two share a name
+            out.append(self._normalize(raw[j] if j is not None else {}, pc, text))
         return out
 
     def _normalize(self, a, pc, text) -> dict:
@@ -59,7 +62,7 @@ class GameMaster:
         if kind in ("check", "hide") and not dc:
             dc = 15
         targets = a.get("targets") if isinstance(a.get("targets"), list) else []
-        return {"actor": pc.name, "text": text, "intent": str(a.get("intent", ""))[:120], "kind": kind,
+        return {"actor": pc.name, "actor_id": pc.id, "text": text, "intent": str(a.get("intent", ""))[:120], "kind": kind,
                 "ability": ability, "skill": skill, "dc": dc,
                 "advantage": a.get("advantage") if a.get("advantage") in ("advantage", "disadvantage") else "normal",
                 "targets": [str(t) for t in targets][:4], "using": str(a.get("using", ""))[:60],

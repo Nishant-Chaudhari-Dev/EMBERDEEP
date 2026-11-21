@@ -132,6 +132,7 @@ def main():
             print("\n" + wrap(session.s.log[-1]["text"]) + "\n")
         if session.s.combat and not session.engine.current_pc():
             session._rolls(session.engine.run_until_pc())
+        session.wake_if_party_down()
 
     print(paint("Type what you do in plain words. /help for commands, /quit to save and exit.", "dim"))
     while True:
@@ -150,7 +151,10 @@ def main():
         else:
             todo = [p for p in session.expected() if p.id not in session.pending]
             if not todo:
-                session.force_round()
+                if session.pending:
+                    session.force_round()
+                elif not session.wake_if_party_down():
+                    break   # nobody can act and nothing is pending; never spin here
                 continue
             pc = todo[0]
         tag = paint(f"{pc.name} ({pc.hp}/{pc.max_hp} HP)", "bold") + (paint(" your turn", "magenta") if session.s.combat else "")

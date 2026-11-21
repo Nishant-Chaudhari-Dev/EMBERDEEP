@@ -63,12 +63,13 @@ Everything the model proposes goes through the engine first:
 
 | Proposal | Limit |
 |---|---|
-| Damage from narration | at most 6 x average party level + 4 per effect: enough to hurt, never enough to kill a healthy character outright |
+| Damage from narration | at most 6 x average party level + 4 per target per narration, however many effects ask for it: enough to hurt, never enough to kill a healthy character outright |
+| Conditions from narration | paralyzed, stunned and unconscious last at most 3 rounds, so a story beat can't lock a hero out of a fight |
 | Gold | at most 100 x level per effect |
 | XP | at most 100 x total party level per effect |
 | Items | quantity 1 to 20, names trimmed |
 | Effects per narration | 12 max, unknown ops dropped |
-| Spawned enemies | total enemy XP capped by the encounter budget, max(100, 125 x total party level), with at least one enemy always allowed |
+| Spawned enemies | total enemy XP capped by the encounter budget, max(100, 125 x total party level); one enemy is always allowed to start a fight, but reinforcements must fit the budget |
 | Invented monsters | `custom:CR` gets stats from a challenge-rating table (AC, HP, attack bonus, damage, attack count) instead of numbers the model makes up |
 | Attacking friendly NPCs | the NPC becomes a combatant with fitting stats (guard, bandit, cultist, commoner and so on) and initiative starts |
 
@@ -76,7 +77,7 @@ The rejected or clamped parts are reported to the table as system notes, so noth
 
 ## House rules and why
 
-- **Defeat is a story beat, not a game over.** If the whole party drops, the survivors wake at 1 HP, and the narrator gets a note to decide the consequence (captured, robbed, rescued). Wiping out a party because a small model misjudged an encounter is no fun. Characters can still actually die from failed death saves or massive damage.
+- **Defeat is a story beat, not a game over.** If the whole party drops, the survivors wake at 1 HP, and the narrator gets a note to decide the consequence (captured, robbed, rescued). Wiping out a party because a small model misjudged an encounter is no fun. Characters can still actually die from failed death saves or massive damage. The same applies outside a fight: if a trap or fall drops everyone, they come to at 1 HP 1d4 hours later.
 - **Last stand in solo play.** Once per long rest, a lone hero drops to 1 HP instead of 0. Solo 5e is brutal at level 1, and nobody's there to stabilize you. It turns off as soon as a second player joins.
 - **Sneak Attack** requires advantage or another conscious party member in the fight. There's no grid, so "an ally adjacent to the target" gets approximated.
 - **Area spells** roll damage once, and each target saves separately, as in the book, but simpler to narrate.
