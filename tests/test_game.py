@@ -17,6 +17,10 @@ from server import Hub, make_handler
 from session import Session
 
 
+def fx(op, target="", value="", amount=0, text=""):
+    return {"op": op, "target": target, "value": value, "amount": amount, "text": text}
+
+
 def act(actor, kind="none", **kw):
     a = {"actor": actor, "intent": "", "kind": kind, "ability": "NONE", "skill": "none", "dc": 0,
          "advantage": "normal", "targets": [], "using": "", "slot_level": 0, "rest": "none"}
@@ -207,6 +211,16 @@ class SessionTests(unittest.TestCase):
         llm.chat = lambda *a, **k: "I am a teapot, not JSON"
         s.submit(pc.id, "I dance")
         self.assertTrue(any(e["kind"] == "narration" for e in ev))
+        self.assertFalse(any("again" in e["text"] for e in ev if e["kind"] == "narration"))   # never invite a repeat
+
+    def test_garbage_opening_location_is_replaced(self):
+        llm = ScriptedLLM()
+        s = Session(llm, seed=1)
+        s.add_character("Ann", "Brakka", "half_orc", "fighter")
+        llm.push("opening", {"narration": "You arrive.", "npcs": [], "quest": {"title": "", "notes": ""},
+                             "location": {"name": "Brakka (Half-Orc Fighter 1): A scarred warrior", "description": "Scarred."}})
+        s.begin("")
+        self.assertEqual(s.engine.location().name, "The Crossroads")
 
     def test_party_down_out_of_combat_wakes_up(self):
         s, llm, ev = new_session(n_players=1)
@@ -326,6 +340,69 @@ class GuardrailTests(unittest.TestCase):
         r = e.resolve(act("Grul", "feature", using="relentless"))
         self.assertTrue(r["refund"])
         self.assertEqual(orc.features["relentless"], 1)
+
+    def test_narration_cannot_repeat_engine_results(self):
+        e = Engine(GameState(), dice=Dice(1))
+        pc = e.create_character("A", "p", "human", "fighter")
+        gob = e.spawn("Goblin", "goblin", 1)[0]
+        e.damage(gob, 3)                           # the engine's own hit this turn
+        pc.hp -= 4
+        e.heal(pc, 2)                              # and a potion
+        e.award_xp(50)
+        xp = pc.xp
+        e.apply_effects([fx("damage", "Goblin", amount=3, text="the same hit"),
+                         fx("heal", "A", amount=2, text="the same potion"),
+                         fx("xp", amount=50)])
+        self.assertEqual(gob.hp, 4)
+        self.assertEqual(pc.hp, pc.max_hp - 2)
+        self.assertEqual(pc.xp, xp)
+        e.apply_effects([fx("damage", "Goblin", amount=2, text="a falling beam")])
+        self.assertEqual(gob.hp, 2)                # the next narration may add its own consequences
+
+    def test_enemies_cannot_become_npcs(self):
+        e = Engine(GameState(), dice=Dice(1))
+        e.create_character("A", "p", "human", "fighter")
+        e.spawn("The Rooted Stalker", "custom:1", 1)
+        e.apply_effects([fx("add_npc", "The Rooted Stalker", "hostile"), fx("add_npc", "Mira", "friendly", text="a healer")])
+        self.assertEqual([n.name for n in e.s.npcs.values()], ["Mira"])
+        self.assertEqual(e.apply_effects([fx("add_npc", "Mira", "friendly")]), [])   # no repeated "Met Mira"
+        e.start_combat()
+        e.end_combat("victory")
+        e.apply_effects([fx("add_npc", "Rooted Stalker", "hostile")])                # not even right after the fight
+        self.assertEqual([n.name for n in e.s.npcs.values()], ["Mira"])
+
+    def test_fake_moves_are_ignored(self):
+        e = Engine(GameState(), dice=Dice(1))
+        e.create_character("A", "p", "human", "fighter")
+        e.move_party("Thornwick Square")
+        for bad in ("new", "new_place", "active", "Thornwick Square"):
+            e.apply_effects([fx("move", value=bad)])
+        self.assertEqual([l.name for l in e.s.locations.values()], ["Thornwick Square"])
+        e.apply_effects([fx("move", value="Old Quarry")])
+        self.assertEqual(e.location().name, "Old Quarry")
+        e.spawn("Goblin", "goblin", 1)
+        e.start_combat()
+        e.apply_effects([fx("move", value="Thornwick Square")])                     # no travel mid-fight
+        self.assertEqual(e.location().name, "Old Quarry")
+
+    def test_spell_in_players_words_beats_a_weapon_guess(self):
+        e = Engine(GameState(), dice=Dice(1))
+        lise = e.create_character("Lise", "p", "elf", "wizard")
+        e.create_character("Brakka", "p", "half_orc", "fighter")
+        e.spawn("Goblin", "goblin", 2)
+        r = e.resolve(act("Lise", "attack", using="longsword", targets=["goblin"], text="I cast fire bolt at the nearest enemy."))
+        self.assertEqual(r["kind"], "spell")
+        self.assertIn("Fire Bolt", r["text"])
+        r = e.resolve(act("Lise", "attack", using="torch", targets=["goblin"], text="I swing my torch by the light of my staff."))
+        self.assertEqual(r["kind"], "attack")      # Light is a utility spell, never a stand-in for an attack
+        r = e.resolve(act("Brakka", "attack", using="longsword", targets=["goblin"], text="I cast my longsword at it."))
+        self.assertEqual(r["kind"], "attack")      # a weapon the hero carries always wins
+        self.assertEqual(lise.slots["1"], 2)       # cantrips only so far
+
+    def test_spawn_uses_bestiary_name_for_ids(self):
+        e = Engine(GameState(), dice=Dice(1))
+        e.create_character("A", "p", "human", "fighter")
+        self.assertEqual(e.spawn("giant_rat", "giant_rat")[0].name, "Giant rat")
 
     def test_custom_cr_zero(self):
         e = Engine(GameState(), dice=Dice(1))

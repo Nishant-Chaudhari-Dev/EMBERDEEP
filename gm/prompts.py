@@ -106,8 +106,8 @@ TASK: narrate what happens, then list any NEW consequences as effects.
 
 RULES FOR NARRATION
 - RESOLVED lines are the truth and are already applied. Successes succeed, failures fail. Hits hit; misses miss.
-- Do not create damage or heal effects for things listed in RESOLVED; the engine already applied them.
-- Second person, present tense, 60 to 170 words. Vivid, specific, sensory. No lists, no dice numbers, no HP numbers.
+- Do not create damage, heal or xp effects for anything in RESOLVED (including the XP for winning a fight); the engine already applied them.
+- Second person, present tense, 60 to 170 words. Vivid, specific, sensory. No lists, no markdown, no dice numbers, no HP numbers.
 - Give NPCs distinct voices and motives. Let the world react to what the players did.
 - Never decide what player characters do, say or feel beyond what they declared.
 - In combat, describe the exchange and end on whose turn is next. Out of combat, end on a clear situation that invites action. Never list options.
@@ -116,7 +116,8 @@ EFFECTS (only for consequences you introduce; empty list is fine). Unused fields
 damage / heal: target, amount, text = cause | give_item / take_item: target = character, value = item, amount = qty
 gold: target = character, amount (negative = spend) | xp: amount (for clever non-combat achievements, 25 to 100)
 condition / remove_condition: target, value = condition, amount = rounds (0 = until removed; paralyzed, stunned and unconscious last at most 3)
-move: value = place name, text = one-line description if new | add_npc: target = name, value = friendly|neutral|hostile, text = who they are
+move: only when the party travels; value = the place's proper name (e.g. "Old Quarry"), text = one-line description if new
+add_npc: people only, never enemies (spawn_enemy covers foes); target = name, value = friendly|neutral|hostile, text = who they are
 update_npc: target = name, value = friendly|neutral|hostile|dead, text = what changed | quest: target = title, value = active|done|failed, text = notes
 flag: target = key, value = fact to remember | time: amount = hours passed | end_combat: enemies surrender or flee
 spawn_enemy: target = display name, value = bestiary id or custom:CR (e.g. custom:0.5), amount = count, text = description for custom
@@ -135,7 +136,8 @@ Plain prose only."""
 ASK = IDENTITY + """
 
 A player is asking an out-of-character question. Answer briefly and honestly as the GM: rules, what their character would
-reasonably know, or a recap. Do not advance the story or reveal secrets the characters haven't discovered."""
+reasonably know, or a recap. Do not advance the story or reveal secrets the characters haven't discovered.
+Plain text, no markdown, at most 100 words."""
 
 DEFAULT_PREMISE = ("A low-fantasy frontier. The village of Thornwick sits at the edge of the Emberdeep, a forest of charred "
                    "black pines that never finished burning. Something beneath the old quarry has woken.")

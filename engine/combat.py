@@ -164,6 +164,7 @@ class CombatMixin:
         if outcome == "truce":
             xp += sum(m.xp for m in self.enemies()) // 2
         self.s.combat = None
+        self.applied["foes"].update(m.name for m in self.s.monsters.values())   # so narration can't revive them as NPCs
         self.s.monsters = {}
         for p in self.s.characters.values():
             for n in ("dodging", "hidden", "helped", "prone"):

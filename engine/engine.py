@@ -15,6 +15,9 @@ from .models import Character, GameState, Location, Monster, NPC, Quest
 
 ACTIVE_FEATURES = ("second_wind", "action_surge")   # everything else (sneak attack, relentless...) is passive
 MAX_NARRATED_SKIP = 3   # rounds a narrated paralyzed/stunned/unconscious can last
+# Words small models put in a move effect instead of a real place name.
+PLACEHOLDER_PLACES = {"new", "new_place", "new_location", "active", "done", "failed", "none", "unknown",
+                      "here", "there", "current", "same", "location", "place"}
 
 
 def result(actor, kind, text, success=None, **kw) -> dict:
@@ -55,6 +58,13 @@ class Engine(CombatMixin):
         self.c = content or Content()
         self.dice = dice or Dice()
         self.notes = []   # system messages for the UI (initiative, level ups, rejected effects)
+        self.forget_applied()
+
+    def forget_applied(self):
+        """What the engine itself resolved since the last narration. The narrator is told those
+        results are already applied; this record is how the engine makes sure they can't be applied
+        twice (small models often re-add the damage, healing or XP they just narrated)."""
+        self.applied = {"touched": set(), "xp": False, "foes": set()}
 
     # ------------------------------------------------------------------ lookup
     def pcs(self, living=True):
@@ -181,6 +191,7 @@ class Engine(CombatMixin):
     def damage(self, t, amount, crit=False) -> str:
         if amount <= 0:
             return ""
+        self.applied["touched"].add(t.id)
         if t.kind == "monster":
             t.hp = max(0, t.hp - amount)
             if t.hp == 0:
@@ -214,6 +225,7 @@ class Engine(CombatMixin):
     def heal(self, t, amount) -> str:
         if t.kind == "pc" and t.dead:
             return f"{t.name} is beyond ordinary healing."
+        self.applied["touched"].add(t.id)
         before = t.hp
         t.hp = min(t.max_hp, t.hp + max(0, amount))
         if t.kind == "pc" and before == 0 and t.hp > 0:
@@ -334,6 +346,7 @@ class Engine(CombatMixin):
         living = self.pcs()
         if not living or total <= 0:
             return []
+        self.applied["xp"] = True
         share = total // len(living)
         out = []
         for pc in living:
@@ -380,7 +393,8 @@ class Engine(CombatMixin):
             t = self.c.monsters[base]
             tpl = dict(ac=t["ac"], hp=t["hp"], attacks=t["attacks"], abilities=t["abilities"],
                        xp=t["xp"], multiattack=t.get("multiattack", 1), traits=t.get("traits", []))
-            name = name or t["name"]
+            if not name or _slug(name) == base:   # the narrator passed the id ("giant_rat") as the name
+                name = t["name"]
         else:
             ac, hp, bonus, dmg, n_atk, xp = R.CR_TEMPLATES[R.nearest_cr(0.25 if cr is None else cr)]   # CR 0 is real
             tpl = dict(ac=ac, hp=hp, attacks=[{"name": "attack", "bonus": bonus, "damage": dmg, "type": "bludgeoning"}],
@@ -474,11 +488,15 @@ class Engine(CombatMixin):
         return found
 
     def _do_attack(self, pc, a, mode):
+        wid = self.match_weapon(pc, a.get("using", ""))
+        if wid not in pc.weapons:
+            sid = self.named_spell(pc, a.get("text", ""))
+            if sid:   # the model filed "I cast fire bolt" as a weapon attack; the player's own words win
+                return self._do_spell(pc, dict(a, using=sid), mode)
         targets = self._offensive_targets(pc, a.get("targets"))
         if not targets:
             return result(pc.name, "none", f"{pc.name} finds nothing to attack.")
         t = targets[0]
-        wid = self.match_weapon(pc, a.get("using", ""))
         w = self.c.weapons[wid]
         props = w["props"]
         if "ranged" in props:
@@ -517,6 +535,15 @@ class Engine(CombatMixin):
         if not t or t in ("weapon", "melee"):
             return pc.weapons[0] if pc.weapons else "unarmed"
         return "improvised"
+
+    def named_spell(self, pc, text):
+        """A damaging spell the character knows, named in the player's own words ("I cast fire bolt")."""
+        words = f" {_norm(text)} "
+        for sid in pc.spells:
+            sp = self.c.spells.get(sid)
+            if sp and sp["type"] in ("attack", "auto", "save") and f" {_norm(sp['name'])} " in words:
+                return sid
+        return None
 
     def match_spell(self, pc, text):
         key = _slug(text)
@@ -714,6 +741,16 @@ class Engine(CombatMixin):
     def location(self):
         return self.s.locations.get(self.s.current_location)
 
+    def valid_place(self, name) -> bool:
+        """Rejects what small models put where a place name belongs: placeholders ("new_place"),
+        or a line copied from the party list ("Brakka (Half-Orc Fighter 1): A scarred warrior...")."""
+        n = str(name or "").strip()
+        if not n or len(n) > 60 or "_" in n or any(ch in n for ch in "():;"):
+            return False
+        if _slug(n) in PLACEHOLDER_PLACES:
+            return False
+        return all(_norm(n) != _norm(p.name) for p in self.s.characters.values())
+
     def find_location(self, name):
         key = _norm(name)
         for loc in self.s.locations.values():
@@ -760,23 +797,29 @@ class Engine(CombatMixin):
         """Validate and apply story consequences proposed by the narrator. Returns UI notes."""
         out = []
         dealt = {}   # creature id -> narration damage so far, so the cap holds per target
+        already = self.applied
+        self.forget_applied()
         for e in (effects or [])[:12]:
             try:
-                msg = self._apply(e, dealt)
+                msg = self._apply(e, dealt, already)
             except Exception as exc:  # a malformed effect never crashes the game
                 msg = None
                 self.notes.append(f"(ignored malformed effect {e.get('op')}: {exc})")
             if msg:
                 out.append(msg)
+        self.forget_applied()   # what these effects did doesn't carry into the next narration
         return out
 
-    def _apply(self, e, dealt) -> str:
+    def _apply(self, e, dealt, already) -> str:
         op = e.get("op", "")
         tgt, val, amt, txt = str(e.get("target", "")), str(e.get("value", "")), int(e.get("amount") or 0), str(e.get("text", ""))
         lvl = max(1, round(sum(p.level for p in self.pcs()) / max(1, len(self.pcs()))))
         if op in ("damage", "heal"):
             t = self.find(tgt, npcs=False)
             if not t:
+                return None
+            if t.id in already["touched"]:
+                self.notes.append(f"(ignored narrated {op} for {t.name}: the rolls already covered it)")
                 return None
             if op == "damage":
                 room = 6 * lvl + 4 - dealt.get(t.id, 0)
@@ -811,6 +854,9 @@ class Engine(CombatMixin):
             pc.gold += amt
             return f"{pc.name} {'gains' if amt >= 0 else 'spends'} {abs(amt)} gp ({pc.gold} gp)" if amt else None
         if op == "xp":
+            if already["xp"]:
+                self.notes.append("(ignored narrated XP: the party was just awarded XP for this)")
+                return None
             amt = max(0, min(amt, 100 * sum(p.level for p in self.pcs())))
             ups = self.award_xp(amt)
             return (f"The party earns {amt} XP. " + " ".join(ups)).strip() if amt else None
@@ -830,10 +876,28 @@ class Engine(CombatMixin):
                 return f"{t.name} is no longer {val.lower()}"
             return None
         if op == "move":
-            return self.move_party(val or tgt, txt) if (val or tgt) else None
+            place = (val or tgt).strip()
+            if not place:
+                return None
+            if self.s.combat:
+                self.notes.append(f"(ignored a move to {place}: the party can't travel in the middle of a fight)")
+                return None
+            if not self.valid_place(place):
+                self.notes.append(f"(ignored a move to '{place[:40]}': that isn't a place name)")
+                return None
+            dest, here = self.find_location(place), self.location()
+            if dest and here and dest.id == here.id:
+                return None          # already there
+            return self.move_party(place, txt)
         if op == "add_npc":
             if not tgt:
                 return None
+            foes = {_norm(m.name) for m in self.s.monsters.values()} | {_norm(n) for n in already["foes"]}
+            if _norm(tgt) in foes:   # an enemy registered as a person would come back as a second combatant
+                return None
+            known = self.find(tgt, pcs=False, monsters=False)
+            if isinstance(known, NPC) and _norm(known.name) == _norm(tgt):
+                return None          # already met: no repeated "Met ..." note
             npc = self.add_npc(tgt, val, txt)
             return f"Met {npc.name}"
         if op == "update_npc":

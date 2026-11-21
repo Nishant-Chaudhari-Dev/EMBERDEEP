@@ -112,7 +112,10 @@ class Session:
                 self.emit("thinking", "The GM is setting the scene...")
                 op = self.gm.opening(self.s.premise)
                 loc = op.get("location") or {}
-                self.engine.move_party(loc.get("name") or "The Crossroads", loc.get("description", ""))
+                if self.engine.valid_place(loc.get("name")):
+                    self.engine.move_party(loc["name"], loc.get("description", ""))
+                else:   # no usable name, so its description is suspect too
+                    self.engine.move_party("The Crossroads", "Where the roads meet, at the start of the tale.")
                 for n in (op.get("npcs") or [])[:4]:
                     if isinstance(n, dict) and n.get("name"):
                         self.engine.add_npc(n["name"], n.get("disposition", "neutral"), n.get("description", ""))
@@ -293,6 +296,7 @@ class Session:
             narration, effects = self.gm.narrate(declared, results, situation)
         except LLMError as e:
             self.emit("error", f"{e}  (The rolls above already happened; only the narration is missing.)")
+            self.engine.forget_applied()
             return "; ".join(r["text"] for r in results if r.get("text"))
         self.emit("narration", narration)
         for note in self.engine.apply_effects(effects):

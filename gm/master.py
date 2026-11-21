@@ -84,8 +84,8 @@ class GameMaster:
         if nxt:
             user += f"\n\nNext turn: {nxt.name}."
         data = self._json(P.NARRATE, user, P.NARRATE_SCHEMA, 0.85, 700)
-        if not data:
-            return "The world holds its breath. (The GM stumbled; try describing your action again.)", []
+        if not data:   # the results above are already applied, so never invite the player to act twice
+            return "The scene blurs for a moment. (The GM lost the thread; the rolls above still happened, so carry on from here.)", []
         effects = [x for x in data.get("effects", []) if isinstance(x, dict)]
         return str(data.get("narration", "")).strip(), effects
 

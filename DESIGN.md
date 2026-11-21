@@ -65,6 +65,10 @@ Everything the model proposes goes through the engine first:
 |---|---|
 | Damage from narration | at most 6 x average party level + 4 per target per narration, however many effects ask for it: enough to hurt, never enough to kill a healthy character outright |
 | Conditions from narration | paralyzed, stunned and unconscious last at most 3 rounds, so a story beat can't lock a hero out of a fight |
+| Repeating the rolls | narration can't damage or heal a creature the engine just damaged or healed, or add XP right after the engine awarded it; small models often re-apply what they narrate |
+| Moves | ignored mid-fight and for names that aren't places (placeholders like "new_place", or a line copied from the party list), so the map only holds real places; the opening scene gets the same check |
+| Misread spells | if the model files "I cast fire bolt" as a weapon attack with a weapon the character doesn't carry, the spell named in the player's own words is cast instead |
+| New NPCs | an enemy can't be registered as a person (it would come back as a second combatant), and meeting a known NPC again adds no note |
 | Gold | at most 100 x level per effect |
 | XP | at most 100 x total party level per effect |
 | Items | quantity 1 to 20, names trimmed |
